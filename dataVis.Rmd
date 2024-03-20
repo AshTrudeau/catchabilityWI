@@ -39,6 +39,14 @@ creel_fish4<-get_creel_fish_data(wbic=wbics[301:411])
 
 all_fish<-rbind.data.frame(creel_fish, creel_fish2, creel_fish3, creel_fish4)
 
+creel_int<-get_creel_int_party(wbic=wbics[1:100])
+creel_int2<-get_creel_int_party(wbic=wbics[101:200])
+creel_int3<-get_creel_int_party(wbic=wbics[201:300])
+creel_int4<-get_creel_int_party(wbic=wbics[301:411])
+
+all_int<-rbind.data.frame(creel_int, creel_int2, creel_int3, creel_int4)
+
+
 creel_harv_year<-calc_creel_harvest_rates(all_fish, grouping=c("year","wbic"))
 creel_harv_month<-calc_creel_harvest_rates(all_fish, grouping=c("year","month","wbic"))
 
@@ -101,5 +109,66 @@ ggplot(harv_month_wye, aes(x=month, y=spp.catch.rate))+
   geom_point(aes(color=wbic))+
   theme(legend.position="none")
 
+```
+
+Now trip-level creel data. Already have all_fish
+
+```{r}
+
+
+indiv_catch<-all_fish%>%
+  filter(trip.complete=="y")%>%
+  filter(species=="walleye")%>%
+  mutate(across(start.time:not.fishing.amt, as.character))%>%
+  mutate(across(all_of(c("start.time","not.fishing.amt")), ~ifelse(.x=="0","0000", .x)))%>%
+  mutate(across(start.time:not.fishing.amt, ~paste0(substr(.x, 1, 2), ":", substr(.x, 3, 4))))%>%
+  mutate(across(start.time:end.time, ~ymd_hm(paste(sample.date, .x, sep=" "))))%>%
+  mutate(not.fishing.amt=as.numeric(hm(not.fishing.amt)))%>%
+  mutate(hours.fishing=as.numeric(((end.time-start.time)/3600)-(not.fishing.amt/3600))*(fished.perc/100))%>%
+  dplyr::select(!c(unattended.line:interview.comment, troll.elapsed.time, troll.row.flag))%>%
+  filter(hours.fishing>0)%>%
+  mutate(anglerHours=hours.fishing*anglers,
+         cpue=caught/anglerHours,
+         hpue=kept/anglerHours)%>%
+  # now join on PEs and lake characteristics
+  left_join(wye.pe, by=c("wbic","year"))%>%
+  left_join(lakeChar[,c("wbic","lat","long","lake.area","wae.code","max.depth","shore.length")], by="wbic")%>%
+  mutate(pop.density=pe/lake.area)
+  
+write.csv(indiv_catch, here::here("data","indiv.level.cpue.pe.csv"))    
+```
+
+
+```{r}
+ggplot(indiv_catch)+
+  geom_point(aes(x=pop.density, y=cpue))
+
+# some odd outliers here, dropping cpue>50
+```
+```{r}
+indiv_catch<-indiv_catch%>%
+  filter(cpue<50)%>%
+  mutate(wbic=as.factor(wbic))%>%
+  mutate(ln.cpue=log(cpue+0.01),
+         ln.pop.density=log(pop.density+0.01))
+
+ggplot(indiv_catch)+
+  geom_point(aes(x=pop.density, y=cpue, color=wae.code))
+  theme(legend.position="none")
+
+```
+
+```{r}
+ggplot(indiv_catch)+
+  geom_point(aes(x=ln.pop.density, y=ln.cpue, color=wbic))+
+  theme(legend.position="none")
+
+```
+lots of zero values, which isn't ideal. hurdle model is probably appropriate, but starting with linear for slimplicity
+
+```{r}
+ggplot(indiv_catch)+
+  geom_point(aes(x=year, y=cpue, color=as.factor(wbic)))+
+  theme(legend.position="none")
 ```
 
