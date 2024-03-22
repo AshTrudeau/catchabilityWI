@@ -6,24 +6,303 @@ date: "2024-03-20"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa, bblme, emmeans, effects, MFEUtilities, RColorBrewer)
+
 ```
 
-## R Markdown
+I'm looking for variation in catchability that can be associated with angler identity. How much variation does it explain?
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r}
+wd<-getwd()
+db.dir<-paste0(wd, "/MFEdb/")
+db<-"MFEdb_20220405.db"
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+dbTableList(db.dir, db)
 
-```{r cars}
-summary(cars)
+lakes<-dbTable("lakes", fpath=db.dir, dbname=db)
+
+projects<-dbTable("projects", fpath=db.dir, dbname=db)
+
+fishSamples<-dbTable("fish_samples", fpath=db.dir, dbname=db)%>%
+  filter(projectID%in%c("37","38") & gear=="AN")
+
+fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
+  filter(sampleID%in%fishSamples$sampleID)%>%
+  filter(str_length(caughtBy)<4)%>%
+  mutate(caughtBy=str_trim(caughtBy))%>%
+  filter(otu=="largemouth_bass")%>%
+  select(projectID:caughtBy, comments)%>%
+  # join fishing effort
+  left_join(fishSamples[,c("lakeID","sampleID","dayOfYear","dateSample","dateTimeSample","crew","effort","effortUnits","nAnglers")], by="sampleID")
+
+# some 'caught by' fields had the whole team, some have whitespace
+# removing if length>3, then removing whitespace
+
+
+```
+Now get efCPUE and PEs added on
+Data from Cam Mosley's repo: https://zenodo.org/records/6944763 
+```{r}
+lakes.key<-lakes%>%
+  select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
+# Found lake missing surface area--135.97 ha
+lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
+
+efcpue<-read_csv(here::here("data","FishScapes-hyperstabilitySurvey","cleanedWDNRbassEF.csv"))%>%
+  filter(species=="LARGEMOUTH BASS")%>%
+  # select most recent survey year
+  group_by(WBIC)%>%
+  slice(which.max(surveyYear))%>%
+  ungroup()%>%
+  mutate(WBIC=as.character(WBIC))
+  
+
+pe<-read_csv(here::here("data","FishScapes-hyperstabilitySurvey","cleanedMFEbassPE.csv"))
+
+
+
+all.data<-fishInfo%>%
+  mutate(year=year(dateSample))%>%
+  left_join(lakes.key, by="lakeID")%>%
+  left_join(pe[,c("lakeID","PE","efCPE")], by="lakeID")%>%
+  left_join(efcpue[,c("WBIC","surveyYear","meanEF_CPEkm")], by="WBIC")%>%
+  rename("dnr_efcpue"=meanEF_CPEkm)%>%
+  mutate(pop.density=PE/surfaceArea)
+
+
+data.f<-all.data%>%
+  filter(!is.na(PE))
+
+```
+Now for each angler, need to calculate catch rate. One difficulty: need to include zeroes. 
+
+So first, make df with each sampling date, where each crew member has their own row
+
+```{r}
+lonely.crew<-data.f%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(crew=unique(crew))%>%
+  filter(str_length(crew)<4)
+
+full.crew<-data.f%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(crew=unique(crew))%>%
+  filter(str_length(crew)>3)
+
+nameRepair.ALK<-fishSamples%>%
+  filter(grepl("AK,", crew))
+
+long.crew<-fishSamples%>%
+  group_by(sampleID)%>%
+  summarize(crew=unique(crew))%>%
+  # split crew into columns and then pivot longer
+  separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
+  pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)
+
+# now get catch rates from angling data and left join to long.crew. empty values can then be replaced with 0
+
+cpue<-all.data%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(nCaught=n(),
+            effort=unique(effort),
+            anCPUE=nCaught/effort)%>%
+  ungroup()
+
+catch.pe<-long.crew%>%
+  left_join(fishSamples[,c("sampleID","effort")], by="sampleID")%>%
+  left_join(cpue[,c("sampleID","caughtBy","nCaught")], by=c("sampleID", "caughtBy"))%>%
+  mutate(lakeID=str_split_fixed(sampleID, "_", 2)[,1])%>%
+  left_join(lakes.key, by="lakeID")%>%
+  left_join(pe[,c("lakeID","PE","efCPE")], by="lakeID")%>%
+  left_join(efcpue[,c("WBIC","surveyYear","meanEF_CPEkm")], by="WBIC")%>%
+  rename("dnr_efcpue"=meanEF_CPEkm)%>%
+  mutate(pop.density=PE/surfaceArea,
+         nCaught=ifelse(is.na(nCaught), 0, nCaught),
+         anCPUE=nCaught/effort,
+         date=ymd(str_split_fixed(sampleID, "_", 4)[,3]),
+         year=year(date),
+         dayOfYear=yday(date))
+
+
+# now filter to observations with PE
+
+initial.problem<-filter(long.crew, caughtBy=="AK")
+crew.ak<-initial.problem$sampleID
+
+samples.ak<-filter(fishSamples, sampleID%in%crew.ak)
+
+ak<-filter(catch.pe, caughtBy=="AK")
+al<-filter(catch.pe, caughtBy=="AL")
+both<-filter(catch.pe, caughtBy%in%c("AK","AL"))
+
+catch.pe.f<-catch.pe%>%
+  filter(!is.na(PE))%>%
+  mutate(ln.pop.density=log(pop.density),
+         year=as.factor(year),
+         dayOfYear2=dayOfYear^2,
+         sc.doy=scale(dayOfYear),
+         sc.doy2=scale(dayOfYear2),
+         sc.ln.pop.density=scale(ln.pop.density))
+
+ggplot(catch.pe.f)+
+  geom_histogram(aes(pop.density))+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","pop.density.hist.png"), height=4, width=6)
+
+ggplot(catch.pe.f)+
+  geom_histogram(aes(anCPUE))+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","cpue.hist.png"), height=4, width=6)
+
+
 ```
 
-## Including Plots
+```{r}
+ggplot(catch.pe.f)+
+  geom_point(aes(x=pop.density, y=anCPUE, color=lakeID))+
+  scale_color_manual(values=c(brewer.pal(13, "Paired"), "black"))+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","cpue.vs.pop.density.png"), height=4, width=6)
+```
+```{r}
+ggplot(catch.pe.f)+
+  geom_point(aes(x=ln.pop.density, y=log(anCPUE+0.01), color=lakeID))+
+  scale_color_manual(values=c(brewer.pal(13, "Paired"), "black"))+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","ln.cpue.vs.ln.pop.density.png"), height=4, width=6)
 
-You can also embed plots, for example:
-
-```{r pressure, echo=FALSE}
-plot(pressure)
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+color palette generated here http://vrl.cs.brown.edu/color 
+max perceptual distance, max pair preference, min name difference and uniqueness, 20 colors
+
+```{r}
+ggplot(catch.pe.f)+
+  geom_point(aes(x=ln.pop.density, y=log(anCPUE+0.01), color=caughtBy))+
+  scale_color_manual(values=c("#35618f", "#c0e087", "#702cb4", "#48a421", "#ef66f0", "#155126", "#72e5ef", "#722e57", "#5df23e", "#e21c7a", "#21f0b6", "#8d371b", "#11a0aa", "#ff8889", "#758c45", "#8a96f7", "#f4d403", "#d11f0b", "#f8cac2", "#584328"))+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","cpue.by.angler.png"), height=4, width=6)
+```
+```{r}
+ggplot(catch.pe.f)+
+  geom_point(aes(x=pop.density, y=anCPUE, color=as.factor(year)))+
+  scale_color_manual(values=c("red","blue"))+
+  theme_bw()
+
+```
+```{r}
+ggplot(catch.pe.f)+
+  geom_point(aes(x=dayOfYear, y=log(anCPUE+0.01), color=as.factor(year)))+
+    scale_color_manual(values=c("red","blue"))+
+  theme_bw()
+
+```
+
+wow; much higher catch rates in 2019. crew difference?
+
+Now it's time to fit some models! This is all in the summer; I'm going to avoid seasonality for now but may add quadratic day of year effect. Much more data limited here than with the DNR dataset. My main interest is quantifying the variance explained by angler ID
+
+Compare quadratic fixed effects of day of year and year with random intercept of date
+
+```{r}
+mod.fix.day<-glmmTMB(anCPUE~sc.ln.pop.density+year + sc.doy + sc.doy2 +
+                       (1|lakeID)+(1|caughtBy) , 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+                  ziformula=~ln.pop.density + 
+                 year + sc.doy + sc.doy2+(1|lakeID)+(1|caughtBy))
+
+mod.rand.day<-glmmTMB(anCPUE~sc.ln.pop.density+
+                       (1|lakeID)+(1|caughtBy)+(1|date) , 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+                  ziformula=~ln.pop.density + 
+                  (1|lakeID)+(1|caughtBy)+(1|date))
+
+AIC(mod.fix.day, mod.rand.day)
+
+sim.res<-simulateResiduals(mod.fix.day)
+plot(sim.res)
+```
+
+
+
+```{r}
+mod.0<-glmmTMB(anCPUE~sc.ln.pop.density  + year + sc.doy + sc.doy2, 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + 
+                 year + sc.doy + sc.doy2)
+
+mod.1<-glmmTMB(anCPUE~sc.ln.pop.density  + year + sc.doy + sc.doy2+(1|lakeID) , 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + 
+                 year + sc.doy + sc.doy2+(1|lakeID))
+
+mod.2<-glmmTMB(anCPUE~sc.ln.pop.density+year + sc.doy + sc.doy2 + (1|lakeID)+(1|caughtBy) , 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + 
+                 year + sc.doy + sc.doy2+(1|lakeID)+(1|caughtBy))
+
+mod.3<-glmmTMB(anCPUE~sc.ln.pop.density+  year + sc.doy + sc.doy2 + (1|lakeID)+(1|date)+(1|caughtBy) , 
+                  data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
+               
+               ziformula=~ln.pop.density + year + sc.doy +
+                 sc.doy2+(1|lakeID)+(1|date)+(1|caughtBy))
+
+
+AIC(mod.0, mod.1, mod.2, mod.3)
+
+sim.res<-simulateResiduals(mod.3)
+plot(sim.res)
+```
+2018 residuals are low, Alex's are high, White Birch is high
+```{r}
+plotResiduals(sim.res, form=catch.pe.f$caughtBy)
+plotResiduals(sim.res, form=catch.pe.f$lakeID)
+plotResiduals(sim.res, form=catch.pe.f$date)
+
+plotResiduals(sim.res, form=catch.pe.f$year)
+plotResiduals(sim.res, form=catch.pe.f$sc.doy)
+plotResiduals(sim.res, form=catch.pe.f$sc.doy2)
+
+plotResiduals(sim.res, form=catch.pe.f$ln.pop.density)
+
+
+```
+
+```{r}
+performance::r2(mod.3)
+performance::r2_zeroinflated(mod.3)
+```
+Make some predictions
+
+```{r}
+catch.pe.f$predict<-predict(mod.3, type="response")
+simulate<-simulate(mod.3, seed=320)
+catch.pe.f$simulate<-simulate$sim_1
+
+ggplot(catch.pe.f)+
+  geom_histogram(aes(anCPUE))+
+  geom_histogram(aes(predict), fill="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","mod.predict.histogram.png"), height=4, width=6)
+
+ggplot(catch.pe.f)+
+  geom_point(aes(x=ln.pop.density, y=anCPUE))+
+  geom_point(aes(x=ln.pop.density, y=predict), color="red")+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","mod.predict.png"), height=4, width=6)
+
+ggplot(catch.pe.f)+
+  geom_point(aes(x=ln.pop.density, y=anCPUE))+
+  geom_point(aes(x=ln.pop.density, y=simulate), color="red")+
+  theme_bw()
+ggsave(here::here("figures","fishscapes","mod.simulate.png"), height=4, width=6)
+
+```
+
+Let's look at random effects, especially for individual mean catchability
+
+```{r}
+rand.angler<-ranef(mod.3)
+```
+

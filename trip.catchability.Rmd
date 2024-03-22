@@ -13,7 +13,7 @@ pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, D
 ```{r}
 data<-read_csv(here::here("data","indiv.level.cpue.pe.csv"))%>%
   # more aggressively filtering positive outliers--I really don't believe that anglers are catching more than 10 walleye/hour
-  filter(cpue<10 & !is.na(pe))%>%
+  filter(cpue<20 & !is.na(pe))%>%
   mutate(ln.cpue=log(cpue+0.01),
          ln.pop.density=log(pop.density+0.01),
          wbic=as.factor(wbic))%>%
@@ -30,6 +30,33 @@ plot(mod.indiv)
 # Shaw et al 2021 use a hurdle model and linearized catch equation with glmmTMB
 
 ```
+
+```{r}
+ggplot(data)+
+  geom_histogram(aes(cpue))+
+  theme_bw()
+
+ggsave(here::here("figures","wdnr","cpue.hist.png"), height=4, width=6)
+
+ggplot(data)+
+  geom_histogram(aes(pop.density))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","pop.density.hist.png"), height=4, width=6)
+```
+
+```{r}
+ggplot(data)+
+  geom_point(aes(x=pop.density, y=cpue))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","cpue.pop.png"), height=4, width=6)
+
+ggplot(data)+
+  geom_point(aes(x=ln.pop.density, y=ln.cpue))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","lncpue.lnpop.png"), height=4, width=6)
+
+```
+
 examples here: https://www.biorxiv.org/content/biorxiv/suppl/2017/05/01/132753.DC1/132753-2.pdf 
 lognormal hurdle model here https://github.com/glmmTMB/glmmTMB/issues/677 
 more info https://glmmtmb.github.io/glmmTMB/ 
@@ -51,7 +78,7 @@ mod.hurd<-glmmTMB(cpue~ln.pop.density+(1|wbic) ,
 sim.res<-simulateResiduals(mod.hurd)
 testDispersion(sim.res)
 plot(sim.res)
-plotResiduals(sim.res, form=data$ln.pop.density)
+plotResiduals(sim.res, form=data.red$ln.pop.density)
 
 hist(sim.res)
 ```
@@ -68,26 +95,46 @@ mod.3- random intercepts by lake, year, and day
 
 ```{r}
 
-mod.0<-glmmTMB(cpue~1, 
-                  data=data, family=glmmTMB::lognormal(link="log"), ziformula=~1)
+mod.0<-glmmTMB(cpue~ln.pop.density + month, 
+                  data=data, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month)
 
-mod.1<-glmmTMB(cpue~1+(1|wbic) , 
-                  data=data, family=glmmTMB::lognormal(link="log"), ziformula=~1+(1|wbic))
+mod.1<-glmmTMB(cpue~ln.pop.density + month+(1|wbic) , 
+                  data=data, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month+(1|wbic))
 
-mod.2<-glmmTMB(cpue~1+(1|wbic)+(1|year) , 
-                  data=data, family=glmmTMB::lognormal(link="log"), ziformula=~1+(1|wbic)+(1|year))
-mod.3<-glmmTMB(cpue~1+(1|wbic)+(1|year)+(1|sample.date) , 
-                  data=data, family=glmmTMB::lognormal(link="log"), ziformula=~1+(1|wbic)+(1|year)+(1|sample.date))
+mod.2<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year) , 
+                  data=data, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month+(1|wbic)+(1|year))
+mod.3<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year)+(1|sample.date) , 
+                  data=data, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
+                 month+(1|wbic)+(1|year)+(1|sample.date))
 
 
-AICtab(mod.0, mod.1, mod.2, mod.3)
+AIC(mod.0, mod.1, mod.2, mod.3)
 
 # mod.3 is lowest AIC
 
 summary(mod.3)
-
+performance::r2(mod.3)
+performance::r2_zeroinflated(mod.3)
 ```
-test those residuals, but may need to look into different visualization. 
+
+
+look at random effects
+
+```{r}
+rand.ef<-glmmTMB::ranef(mod.3)
+
+zi.lake.effect<-rand.ef$zi$wbic
+zi.lake.effect$odds<-exp(zi.lake.effect$`(Intercept)`)
+zi.lake.effect$prob<-exp(zi.lake.effect$`(Intercept)`)/(1+exp(zi.lake.effect$`(Intercept)`))
+
+
+hist(zi.lake.effect$prob)
+```
+
 
 ```{r}
 sim.resid<-simulateResiduals(mod.3)
@@ -172,16 +219,37 @@ Assuming I can trust r2 outputs, (but I think I can), model explains very little
 Real quick, let's visualize the model fit
 
 ```{r}
-sim<-simulate(mod.pe.month, seed=392)
+sim<-simulate(mod.3, seed=32)
 
 sim.data<-data
 sim.data$sim.cpue<-sim[[1]]
 
 ggplot(sim.data)+
   geom_point(aes(x=pop.density, y=cpue))+
-  geom_point(aes(x=pop.density, y=sim.cpue), color="red", alpha=0.5)
-
+  geom_point(aes(x=pop.density, y=sim.cpue), color="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","wdnr","model.simulation.png"), height=4, width=6)
 ```
+
+```{r}
+pred<-predict(mod.3, type="response")
+pred.data<-data
+pred.data$pred<-pred
+
+ggplot(pred.data)+
+  geom_point(aes(x=pop.density, y=cpue))+
+  geom_point(aes(x=pop.density, y=pred), color="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","wdnr", "model.predictions.png"), height=4, width=6)
+
+ggplot(pred.data)+
+  geom_histogram(aes(cpue))+
+  geom_histogram(aes(pred), fill="red", alpha=0.5)+
+  theme_bw()
+
+ggsave(here::here("figures","wdnr","hist.model.predictions.png"), height=4, width=6)
+```
+
 
 ```{r}
 ggplot(sim.data, aes(x=cpue, y=sim.cpue))+
