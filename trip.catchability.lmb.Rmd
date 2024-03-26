@@ -1,0 +1,255 @@
+---
+title: "trip.catchability.lmb"
+output: html_document
+date: "2024-03-25"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa,  emmeans, effects)
+
+```
+
+```{r}
+data<-read_csv(here::here("data","indiv.level.lmb.cpue.ef.cpe.csv"))%>%
+  mutate(ln.cpue=log(cpue+0.01),
+         ln.ef.cpe=log(mean_cpe_km),
+         wbic=as.factor(wbic))%>%
+  mutate(sample.date=ymd(sample.date),
+         year=as.factor(year(sample.date)),
+         month=as.factor(month(sample.date)),
+         sample.date=as.factor(sample.date))%>%
+  # no tournaments
+  mutate(out.check=ifelse(wbic=="1539600", 1, 0))
+  
+ggplot(data)+
+  geom_point(aes(x=ln.ef.cpe, y=ln.cpue, color=as.factor(out.check)))
+
+#  might need to correct for that increasing variance at  high ln.ef.cpe values
+# Shaw et al 2021 use a hurdle model and linearized catch equation with glmmTMB
+
+```
+one lake is kind of strange--1539600 shishebogama lake
+```{r}
+ggplot(data)+
+  geom_histogram(aes(cpue))+
+  theme_bw()
+
+ggsave(here::here("figures","wdnr","lmb.cpue.hist.png"), height=4, width=6)
+
+ggplot(data)+
+  geom_histogram(aes(mean_cpe_km))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","lmb.ef.cpe.hist.png"), height=4, width=6)
+```
+
+```{r}
+ggplot(data)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","cpue.pop.png"), height=4, width=6)
+
+ggplot(data)+
+  geom_point(aes(x=ln.ef.cpe, y=ln.cpue))+
+  theme_bw()
+ggsave(here::here("figures","wdnr","lncpue.lnpop.png"), height=4, width=6)
+
+```
+
+examples here: https://www.biorxiv.org/content/biorxiv/suppl/2017/05/01/132753.DC1/132753-2.pdf 
+lognormal hurdle model here https://github.com/glmmTMB/glmmTMB/issues/677 
+more info https://glmmtmb.github.io/glmmTMB/ 
+model evaluation https://cran.r-project.org/web/packages/glmmTMB/vignettes/model_evaluation.pdf 
+
+need dev version
+
+something odd is happening with the DHARMa output--maybe the very large sample size? I'm going to subsample
+the data to see if anything changes
+
+Test run--do the residuals look acceptable with reduced dataset?  (dharma visuals can't handle the large sample size)
+
+```{r}
+data.red<-data[sample(nrow(data), 5000),]
+
+mod.hurd<-glmmTMB(cpue~ln.ef.cpe+(1|wbic) , 
+                  data=data.red, family=glmmTMB::lognormal(link="log"), ziformula=~ln.ef.cpe+(1|wbic))
+
+
+sim.res<-simulateResiduals(mod.hurd)
+plot(sim.res)
+plotResiduals(sim.res, form=data.red$ln.pop.density)
+
+
+hist(sim.res)
+```
+
+I can fit the model, and it doesn't look totally mis-specified. (large sample size makes DHARMa hard to use..)
+
+Let's do some model selection to test variance structures. I know what I want the f ixed effects to be, so this looks backwards. Fixed effects are ln.ef.cpe, guide, and month. Random effects are wbic, year, and sample date
+(I would like to add dusk/dawn indicator but needs work)
+
+In both conditional and zero inflated model: 
+mod.0- Null model
+mod.1- random intercept by lake
+mod.2- random intercepts by lake and year
+mod.3- random intercepts by lake, year, and day
+
+```{r}
+mod.3<-glmmTMB(cpue~ln.ef.cpe+(1|wbic)+(1|year)+(1|sample.date) , 
+                  data=data, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe+month+(1|wbic)+(1|year)+(1|sample.date))
+
+```
+
+
+```{r}
+data.f<-filter(data, as.numeric(as.character(year))>2000)
+
+mod.0<-glmmTMB(cpue~ln.ef.cpe  , 
+                  data=data.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe+month)
+
+mod.1<-glmmTMB(cpue~ln.ef.cpe +(1|wbic) , 
+                  data=data.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic))
+
+mod.2<-glmmTMB(cpue~ln.ef.cpe + (1|wbic)+(1|year) , 
+                  data=data.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic)+(1|year))
+mod.3<-glmmTMB(cpue~ln.ef.cpe + (1|wbic)+(1|year)+(1|sample.date) , 
+                  data=data.f, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe +
+                 month+ (1|wbic)+(1|year)+(1|sample.date))
+
+
+AIC(mod.0, mod.1, mod.2, mod.3)
+
+# mod.3 is lowest AIC
+
+summary(mod.3)
+performance::r2(mod.3)
+performance::r2_zeroinflated(mod.3)
+```
+
+```{r}
+sim.resid<-simulateResiduals(mod.3)
+plot(sim.resid)
+
+plot(sim.resid, form=data.f$ln.ef.cpe)
+plot(sim.resid, form=as.numeric(as.character(data.f$year)))
+#  positive trend  in years from 1990-2000, flat from there
+plot(sim.resid, form=data.f$sampleDate)
+
+```
+
+look at random effects
+
+```{r}
+rand.ef<-glmmTMB::ranef(mod.3)
+
+zi.lake.effect<-rand.ef$zi$wbic
+zi.lake.effect$odds<-exp(zi.lake.effect$`(Intercept)`)
+zi.lake.effect$prob<-exp(zi.lake.effect$`(Intercept)`)/(1+exp(zi.lake.effect$`(Intercept)`))
+
+
+hist(zi.lake.effect$prob)
+```
+
+adding population density and time of day as fixed effects. I have locations, date, and time, so there may be a simple way to get this. 
+
+This may help https://search.r-project.org/CRAN/refmans/chillR/html/daylength.html 
+sunrise and sunset times https://search.r-project.org/CRAN/refmans/bioRad/html/sunrise_sunset.html 
+
+sun angle https://www.rdocumentation.org/packages/oce/versions/0.1-82/topics/sun.angle 
+more sun angles but maybe not what I need https://search.r-project.org/CRAN/refmans/fishmethods/html/astrocalc4r.html 
+
+Adding fixed effects: 
+- Month
+- Time of day (quadratic? sine? categorical dawn/dusk/day/night?) leaning towards categorical--complex cyclic pattern otherwise
+  Note: Test daily random effect once month is included--still needed when seasonality is accounted for?
+  
+
+Assuming I can trust r2 outputs, (but I think I can), model explains very little variance. This could be a results of just high stochasticity, or individual variation in angler ability. It may help to look at fishscapes angling data, where repeated observations are available for individual anglers. 
+
+Real quick, let's visualize the model fit
+
+```{r}
+sim<-simulate(mod.3, seed=32)
+
+sim.data<-data.f
+sim.data$sim.cpue<-sim[[1]]
+
+ggplot(sim.data)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  geom_point(aes(x=mean_cpe_km, y=sim.cpue), color="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","wdnr","lmb.model.simulation.png"), height=4, width=6)
+```
+
+```{r}
+pred<-predict(mod.3, type="response")
+pred.data<-data.f
+pred.data$pred<-pred
+
+ggplot(pred.data)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  geom_point(aes(x=mean_cpe_km, y=pred), color="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","wdnr", "lmb.model.predictions.png"), height=4, width=6)
+
+ggplot(pred.data)+
+  geom_histogram(aes(cpue))+
+  geom_histogram(aes(pred), fill="red", alpha=0.5)+
+  theme_bw()
+
+ggsave(here::here("figures","wdnr","lmb.hist.model.predictions.png"), height=4, width=6)
+```
+
+
+```{r}
+ggplot(sim.data, aes(x=cpue, y=sim.cpue))+
+  geom_point()+
+  geom_abline(slope=1, intercept=0)
+```
+```{r}
+ggplot(sim.data)+
+  geom_histogram(aes(cpue), fill="blue")+
+  geom_histogram(aes(sim.cpue), fill="red", alpha=0.5)
+```
+
+
+Looking more closely at the random effects
+
+```{r}
+rand<-ranef(mod.3)
+
+hist(rand$cond$wbic$`(Intercept)`)
+
+wbic.int<-rand$cond$wbic$`(Intercept)`
+year.int<-rand$cond$year$`(Intercept)`
+day.int<-rand$cond$sample.date$`(Intercept)`
+
+# conditional model
+
+ggplot()+
+    #geom_histogram(aes(day.int), alpha=0.5, fill="gray")+
+  geom_histogram(aes(wbic.int), alpha=0.5, fill="blue")+
+  geom_histogram(aes(year.int), alpha=0.5, fill="red")
+
+```
+```{r}
+summary(mod.3)
+```
+
+```{r}
+# very small percent of variacne explained by conditional model
+all.var<-var(data.f$cpue)
+var.cond.wbic<-0.05109/all.var
+var.cond.year<-0.01424/all.var
+var.cond.date<-0.02350/all.var
+
+var.zi.wbic<-0.78011/all.var
+var.zi.year<-0.05968/all.var
+var.zi.date<-0.15324/all.var
+```
+

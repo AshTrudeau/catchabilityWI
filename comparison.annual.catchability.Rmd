@@ -1,0 +1,249 @@
+---
+title: "comparison.annual.catchability"
+output: html_document
+date: "2024-03-26"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa, emmeans, effects)
+
+```
+
+
+Fitting linearized catch equation for annual catch rates comparing predictive ability of:
+- walleye PE (highest standard)
+- walleye ef CPE
+- largemouth bass ef CPE
+
+```{r}
+# walleye dataset for pe
+pe.cpue.walleye<-read_csv(here::here("data","pe.cpue.walleye.csv"))
+
+# walleye datset for ef cpe
+
+ef.cpe.wye<-read_csv(here::here("data","dnr.ef.cpe.walleye.lmb.csv"))%>%
+  filter(species=="walleye" & gear=="boom_shocker")%>%
+  mutate(km.shocked=total_effort*1.61,
+         cpe_km=total_catch/km.shocked)%>%
+  filter(km.shocked>1)%>%
+  group_by(wbic, year)%>%
+  summarize(mean_cpe_km=mean(cpe_km),
+            sd_cpe_km=sd(cpe_km),
+            n_ef_surveys=n())
+
+# join by year and wbic to wye catch data
+
+ef.cpe.cpue.walleye<-pe.cpue.walleye%>%
+  left_join(ef.cpe.wye, by=c("year","wbic"))
+write.csv(here::here("data","ef.cpe.cpue.walleye.csv"))
+
+# lmb dataset for efcpe
+ef.cpe.cpue.lmb<-read_csv(here::here("data","ef.cpe.cpue.lmb.csv"))
+```
+
+First, annual level walleye cpue vs. PEs
+
+```{r}
+annual.wye.pe<-pe.cpue.walleye%>%
+  filter(!is.na(wye.pop.density))%>%
+  mutate(ln.pop.density=log(wye.pop.density),
+         cpue=spp.catch.rate)
+
+ggplot(annual.wye.pe)+
+  geom_point(aes(x=wye.pop.density, y=cpue))+
+  theme_bw()
+
+ggplot(annual.wye.pe)+
+  geom_point(aes(x=log(wye.pop.density), y=log(cpue+0.01)))+
+  theme_bw()
+
+hist(annual.wye.pe$cpue)
+```
+
+There are some zero catch rates, though not nearly as many as when considering trip data
+zero inflation model didnt' fit right; just fitting lognormal glmm
+```{r}
+
+annual.wye.pe$cpue.01<-annual.wye.pe$cpue+0.01
+
+mod.null<-glmmTMB(cpue.01~ln.pop.density , 
+                  data=annual.wye.pe, family=glmmTMB::lognormal(link="log"))
+
+
+mod.wbic<-glmmTMB(cpue.01~ln.pop.density + (1|wbic), 
+                  data=annual.wye.pe, family=glmmTMB::lognormal(link="log"))
+
+mod.year<-glmmTMB(cpue.01~ln.pop.density + (1|year) , 
+                  data=annual.wye.pe, family=glmmTMB::lognormal(link="log"))
+
+mod.wbic.year<-glmmTMB(cpue.01~ln.pop.density + (1|wbic)+(1|year) , 
+                  data=annual.wye.pe, family=glmmTMB::lognormal(link="log"))
+
+AIC(mod.null, mod.wbic, mod.year, mod.wbic.year)
+
+sim.resid<-simulateResiduals(mod.wbic)
+plot(sim.resid)
+```
+```{r}
+summary(mod.wbic)
+performance::r2(mod.wbic)
+```
+
+At an annual level, model explains quite a lot of variance
+
+```{r}
+annual.wye.pe$mod.pred<-predict(mod.wbic, type="response")
+
+ggplot(annual.wye.pe)+
+  geom_point(aes(x=ln.pop.density, y=cpue+0.01))+
+  geom_point(aes(x=ln.pop.density, y=mod.pred), color="red")
+  
+```
+
+population density explains 32% of the variance in annual catch rate. Lake random effects explain 19%. (visually, see further narrowing around the mean). 49% of variance is coming from individual, environmental, stochastic variation
+
+Look at variation in lake effect
+
+```{r}
+lake.rand<-ranef(mod.wbic)
+lake.rand<-lake.rand$cond
+
+lake.rand.cpue<-exp(lake.rand$wbic)
+
+hist(lake.rand.cpue$`(Intercept)`)
+```
+Now repeat this process, but with walleye electrofishing catch rates
+
+
+```{r}
+annual.wye.ef.cpe<-ef.cpe.cpue.walleye%>%
+  filter(!is.na(mean_cpe_km))%>%
+  mutate(ln.ef.cpe=log(mean_cpe_km),
+         cpue=spp.catch.rate)
+
+
+ggplot(annual.wye.ef.cpe)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  theme_bw()
+
+ggplot(annual.wye.ef.cpe)+
+  geom_point(aes(x=log(mean_cpe_km), y=log(cpue+0.01)))+
+  theme_bw()
+
+hist(annual.wye.ef.cpe$cpue)
+
+```
+```{r}
+mod.ef.null<-glmmTMB(cpue+0.01~ln.ef.cpe , 
+                  data=annual.wye.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+
+mod.ef.wbic<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|wbic), 
+                  data=annual.wye.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+mod.ef.year<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|year) , 
+                  data=annual.wye.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+mod.ef.wbic.year<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|wbic)+(1|year) , 
+                  data=annual.wye.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+AIC(mod.ef.null, mod.ef.wbic, mod.ef.year, mod.ef.wbic.year)
+
+sim.resid<-simulateResiduals(mod.ef.wbic)
+plot(sim.resid)
+
+```
+```{r}
+summary(mod.ef.wbic)
+performance::r2(mod.ef.wbic)
+
+```
+```{r}
+annual.wye.ef.cpe$mod.pred<-predict(mod.ef.wbic, type="response")
+
+ggplot(annual.wye.ef.cpe)+
+  geom_point(aes(x=ln.ef.cpe, y=cpue+0.01))+
+  geom_point(aes(x=ln.ef.cpe, y=mod.pred), color="red")
+
+```
+```{r}
+lake.rand.ef<-ranef(mod.ef.wbic)
+lake.rand.ef<-lake.rand.ef$cond
+
+lake.rand.ef.cpue<-exp(lake.rand.ef$wbic)
+
+hist(lake.rand.ef.cpue$`(Intercept)`)
+
+```
+Seeing very little difference in these outputs, neat. 
+
+Finally, LMB. No DNR PEs, so only ef.cpue
+
+
+```{r}
+ef.cpe.cpue.lmb
+```
+
+
+```{r}
+annual.lmb.ef.cpe<-ef.cpe.cpue.lmb%>%
+  filter(!is.na(mean_cpe_km))%>%
+  mutate(ln.ef.cpe=log(mean_cpe_km),
+         cpue=spp.catch.rate)
+
+
+ggplot(annual.lmb.ef.cpe)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  theme_bw()
+
+ggplot(annual.lmb.ef.cpe)+
+  geom_point(aes(x=log(mean_cpe_km), y=log(cpue+0.01)))+
+  theme_bw()
+
+hist(annual.lmb.ef.cpe$cpue)
+
+```
+```{r}
+mod.lmb.ef.null<-glmmTMB(cpue+0.01~ln.ef.cpe , 
+                  data=annual.lmb.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+
+mod.lmb.ef.wbic<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|wbic), 
+                  data=annual.lmb.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+mod.lmb.ef.year<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|year) , 
+                  data=annual.lmb.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+mod.lmb.ef.wbic.year<-glmmTMB(cpue+0.01~ln.ef.cpe + (1|wbic)+(1|year) , 
+                  data=annual.lmb.ef.cpe, family=glmmTMB::lognormal(link="log"))
+
+AIC(mod.lmb.ef.null, mod.lmb.ef.wbic, mod.lmb.ef.year, mod.lmb.ef.wbic.year)
+
+sim.resid<-simulateResiduals(mod.lmb.ef.wbic)
+plot(sim.resid)
+
+```
+```{r}
+summary(mod.lmb.ef.wbic)
+performance::r2(mod.lmb.ef.wbic)
+
+```
+```{r}
+annual.lmb.ef.cpe$mod.pred<-predict(mod.lmb.ef.wbic, type="response")
+
+ggplot(annual.lmb.ef.cpe)+
+  geom_point(aes(x=ln.ef.cpe, y=cpue+0.01))+
+  geom_point(aes(x=ln.ef.cpe, y=mod.pred), color="red")
+
+```
+```{r}
+lake.rand.ef<-ranef(mod.lmb.ef.wbic)
+lake.rand.ef<-lake.rand.ef$cond
+
+lake.rand.ef.cpue<-exp(lake.rand.ef$wbic)
+
+hist(lake.rand.ef.cpue$`(Intercept)`)
+
+```
+Weird, actually a really similar relationship between pop density/relative abundance and cpue for lmb and walleye
