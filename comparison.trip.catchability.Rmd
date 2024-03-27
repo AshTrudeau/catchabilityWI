@@ -6,24 +6,245 @@ date: "2024-03-26"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa, emmeans, effects)
+
 ```
 
-## R Markdown
+Now comparing statistical modeling outcomes for trip-level angling cpue vs. population density (from PEs) or relative abundance (electrofishing cpe)
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+```{r}
+# walleye data
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+cpue.pe.wye<-read_csv(here::here("data","indiv.level.cpue.pe.walleye.csv"))%>%
+  mutate(ln.pop.density=log(pop.density))%>%
+  ungroup()%>%
+  mutate(sample.date=ymd(sample.date),
+         month=month(sample.date))%>%
+  filter(!is.na(pop.density)&!is.na(cpue))%>%
+  filter(cpue<20)
 
-```{r cars}
-summary(cars)
+ef.cpe.wye<-read_csv(here::here("data","dnr.ef.cpe.walleye.lmb.csv"))%>%
+filter(species=="walleye" & gear=="boom_shocker")%>%
+  mutate(km.shocked=total_effort*1.61,
+         cpe_km=total_catch/km.shocked)%>%
+  filter(km.shocked>1)%>%
+  group_by(wbic, year)%>%
+  summarize(mean_cpe_km=mean(cpe_km),
+            sd_cpe_km=sd(cpe_km),
+            n_ef_surveys=n())%>%
+  ungroup()
+
+# join by year and wbic to walleye cpue
+
+cpue.ef.cpe.wye<-cpue.pe.wye%>%
+  dplyr::select(county:shore.length)%>%
+  left_join(ef.cpe.wye, by=c("wbic","year"))%>%
+  filter(!is.na(mean_cpe_km) & !is.na(cpue))%>%
+  mutate(ln.ef.cpe=log(mean_cpe_km))%>%
+  filter(cpue<20)%>%
+  mutate(month=as.factor(month(sample.date)))
+  
+
+# lmb data
+cpue.ef.cpe.lmb<-read_csv(here::here("data","indiv.level.cpue.ef.cpe.lmb.csv"))%>%
+  select(county:shore.length)%>%
+  filter(!is.na(mean_cpe_km) & !is.na(cpue))%>%
+  mutate(ln.ef.cpe=log(mean_cpe_km))%>%
+  filter(cpue<20)%>%
+  mutate(month=as.factor(month(sample.date)))
+```
+Starting with walleye pe data: cpue.pe.wye
+
+```{r}
+ggplot(cpue.pe.wye)+
+  geom_point(aes(x=pop.density, y=cpue))+
+  theme_bw()
+
+
+ggplot(cpue.pe.wye)+
+  geom_point(aes(x=ln.pop.density, y=log(cpue+0.01)))+
+  theme_bw()
 ```
 
-## Including Plots
 
-You can also embed plots, for example:
+```{r}
+mod.null.wye.pe<-glmmTMB(cpue~ln.pop.density + month, 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month)
 
-```{r pressure, echo=FALSE}
-plot(pressure)
+mod.wbic.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month+(1|wbic))
+
+mod.wbic.year.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month+(1|wbic)+(1|year))
+
+mod.wbic.day.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|sample.date) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
+                 month+(1|wbic)+(1|sample.date))
+
+mod.wbic.year.day.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year)+(1|sample.date) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
+                 month+(1|wbic)+(1|year)+(1|sample.date))
+
+AIC(mod.null.wye.pe, mod.wbic.wye.pe, mod.wbic.year.wye.pe, mod.wbic.day.wye.pe, mod.wbic.year.day.wye.pe)
+
+sim.resid<-simulateResiduals(mod.wbic.year.day.wye.pe)
+plot(sim.resid)
+
+mod.wye.pe<-mod.wbic.year.day.wye.pe
+```
+```{r}
+summary(mod.wye.pe)
+performance::r2(mod.wye.pe)
+```
+woof, incredibly low r2
+
+```{r}
+cpue.pe.wye$mod.pred<-predict(mod.wye.pe, type="response")
+
+ggplot(cpue.pe.wye)+
+  geom_point(aes(x=pop.density, y=cpue))+
+  geom_point(aes(x=pop.density, y=mod.pred), color="red")+
+  theme_bw()
+```
+now walleye ef cpe
+
+```{r}
+ggplot(cpue.ef.cpe.wye)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  theme_bw()
+
+
+ggplot(cpue.ef.cpe.wye)+
+  geom_point(aes(x=ln.ef.cpe, y=log(cpue+0.01)))+
+  theme_bw()
 ```
 
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
+
+```{r}
+mod.null.wye.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month, 
+                  data=cpue.ef.cpe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month)
+
+mod.wbic.wye.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic) , 
+                  data=cpue.ef.cpe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic))
+
+mod.wbic.year.wye.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|year) , 
+                  data=cpue.ef.cpe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic)+(1|year))
+
+mod.wbic.day.wye.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|sample.date) , 
+                  data=cpue.ef.cpe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe +
+                 month+(1|wbic)+(1|sample.date))
+
+mod.wbic.year.day.wye.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|year)+(1|sample.date) , 
+                  data=cpue.ef.cpe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe +
+                 month+(1|wbic)+(1|year)+(1|sample.date))
+
+AIC(mod.null.wye.ef.cpe, mod.wbic.wye.ef.cpe, mod.wbic.year.wye.ef.cpe, mod.wbic.day.wye.ef.cpe, mod.wbic.year.day.wye.ef.cpe)
+
+sim.resid<-simulateResiduals(mod.wbic.year.day.wye.ef.cpe)
+plot(sim.resid)
+
+mod.wye.ef.cpe<-mod.wbic.year.day.wye.ef.cpe
+```
+```{r}
+summary(mod.wye.ef.cpe)
+performance::r2(mod.wye.ef.cpe)
+```
+low r2, but actually higher than the model fit to PEs
+
+```{r}
+cpue.ef.cpe.wye$mod.pred<-predict(mod.wye.ef.cpe, type="response")
+
+ggplot(cpue.ef.cpe.wye)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  geom_point(aes(x=mean_cpe_km, y=mod.pred), color="red")+
+  theme_bw()
+```
+
+
+And LMB ef cpe
+
+
+```{r}
+ggplot(cpue.ef.cpe.lmb)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  theme_bw()
+
+
+ggplot(cpue.ef.cpe.lmb)+
+  geom_point(aes(x=ln.ef.cpe, y=log(cpue+0.01)))+
+  theme_bw()
+```
+Visually, there's already less of a distinct pattern compared to walleye
+
+Convergence issues if I fit the model with month as a covariate. Looking at a histogram of months in the data, I may see the problem: 
+
+```{r}
+hist(as.numeric(cpue.ef.cpe.lmb$month))
+```
+I'm going to adjust the month predictor; 5, 6, 7, 8, 9, 10 will remain as dummy variables; 1, 2, 3, 4, 11, and 12 will be baseline
+
+```{r}
+cpue.ef.cpe.lmb$month<-ifelse(cpue.ef.cpe.lmb$month%in%c(1,2,3,4,11,12), 0, cpue.ef.cpe.lmb$month)
+hist(cpue.ef.cpe.lmb$month)
+
+cpue.ef.cpe.lmb$month<-as.factor(cpue.ef.cpe.lmb$month)
+str(cpue.ef.cpe.lmb$month)
+```
+
+
+```{r}
+mod.null.lmb.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month, 
+                  data=cpue.ef.cpe.lmb, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month)
+
+mod.wbic.lmb.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic) , 
+                  data=cpue.ef.cpe.lmb, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic))
+
+mod.wbic.year.lmb.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|year) , 
+                  data=cpue.ef.cpe.lmb, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe + month+(1|wbic)+(1|year))
+
+mod.wbic.day.lmb.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|sample.date) , 
+                  data=cpue.ef.cpe.lmb, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe +
+                 month+(1|wbic)+(1|sample.date))
+
+mod.wbic.year.day.lmb.ef.cpe<-glmmTMB(cpue~ln.ef.cpe + month+(1|wbic)+(1|year)+(1|sample.date) , 
+                  data=cpue.ef.cpe.lmb, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.ef.cpe +
+                 month+(1|wbic)+(1|year)+(1|sample.date))
+
+AIC(mod.null.lmb.ef.cpe, mod.wbic.lmb.ef.cpe, mod.wbic.year.lmb.ef.cpe, mod.wbic.day.lmb.ef.cpe, mod.wbic.year.day.lmb.ef.cpe)
+
+sim.resid<-simulateResiduals(mod.wbic.year.day.lmb.ef.cpe)
+plot(sim.resid)
+
+mod.lmb.ef.cpe<-mod.wbic.year.day.lmb.ef.cpe
+```
+```{r}
+summary(mod.lmb.ef.cpe)
+performance::r2(mod.lmb.ef.cpe)
+```
+low, but like ef.cpue.wye, not as low as model using PEs
+
+```{r}
+cpue.ef.cpe.lmb$mod.pred<-predict(mod.lmb.ef.cpe, type="response")
+
+ggplot(cpue.ef.cpe.lmb)+
+  geom_point(aes(x=mean_cpe_km, y=cpue))+
+  geom_point(aes(x=mean_cpe_km, y=mod.pred), color="red")+
+  theme_bw()
+```
+
+
