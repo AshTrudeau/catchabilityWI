@@ -33,7 +33,7 @@ fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
   filter(str_length(caughtBy)<4)%>%
   mutate(caughtBy=str_trim(caughtBy))%>%
   filter(otu=="largemouth_bass")%>%
-  select(projectID:caughtBy, comments)%>%
+  dplyr::select(projectID:caughtBy, comments)%>%
   # join fishing effort
   left_join(fishSamples[,c("lakeID","sampleID","dayOfYear","dateSample","dateTimeSample","crew","effort","effortUnits","nAnglers")], by="sampleID")
 
@@ -46,7 +46,7 @@ Now get efCPUE and PEs added on
 Data from Cam Mosley's repo: https://zenodo.org/records/6944763 
 ```{r}
 lakes.key<-lakes%>%
-  select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
+  dplyr::select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
 # Found lake missing surface area--135.97 ha
 lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
 
@@ -80,20 +80,17 @@ Now for each angler, need to calculate catch rate. One difficulty: need to inclu
 So first, make df with each sampling date, where each crew member has their own row
 
 ```{r}
-nameRepair.AK<-all.data%>%
-  filter(grepl("AK,", crew))
 
-nameRepair.ALK<-nameRepair.AK%>%
-  filter(as.character(dateSample)%in%c("2019-06-08", "2019-06-15", "2019-06-17", "2019-06-22"))%>%
-  mutate(drop=ifelse(as.character(dateSample)=="2019-06-15" & lakeID=="BOT", 1, 0))%>%
-  filter(drop!=1)
+ALK.lake.date<-c("LV_20190608",
+                 "SM_20190615",
+                 "WN_20190617",
+                 "BY_20190622")
 
-nameRepair.AMK<-nameRepair.AK%>%
-  filter(as.character(dateSample)%in%c("2019-06-13","2019-06-15","2019-06-21","2019-06-24","2019-07-13"))%>%
-  mutate(drop=ifelse(as.character(dateSample)=="2019-06-15" & lakeID=="SM", 1, 0))%>%
-  filter(drop!=1)
-
-
+AMK.lake.date<-c("DS_20190613",
+                 "BOT_20190615",
+                 "SM_20190621",
+                 "BOT_20190624",
+                 "NH_20190713")
 
 long.crew<-fishSamples%>%
   group_by(sampleID)%>%
@@ -101,10 +98,19 @@ long.crew<-fishSamples%>%
   # split crew into columns and then pivot longer
   separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
   pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)%>%
-  mutate(caughtBy=ifelse(sampleID%in%nameRepair.ALK$sampleID & caughtBy=="AK","ALK", caughtBy))%>%
-  mutate(caughtBy=ifelse(sampleID%in%nameRepair.AMK$sampleID & caughtBy=="AK","AMK", caughtBy))%>%
-  mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))
-
+  mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))%>%
+  mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))%>%
+  mutate(caughtBy=ifelse(lakeID_date%in%AMK.lake.date, "AMK",
+                         ifelse(lakeID_date%in%ALK.lake.date, "ALK", caughtBy)))
+  
+ long.crew$date<-NULL
+ long.crew$lakeID<-NULL
+ long.crew$lakeID_date<-NULL
+  
+  
+  
 
 # now get catch rates from angling data and left join to long.crew. empty values can then be replaced with 0
 
@@ -138,7 +144,7 @@ catch.join<-long.crew%>%
          sc.ln.pop.density=scale(ln.pop.density),
          ln.dnr.ef.cpe=log(dnr_efcpue))
 
-
+write.csv(catch.join, here::here("data","fishscapes.cpue.pe.ef.cpe.csv"))
 
 # now filter to observations with PE, cpue
 
@@ -239,14 +245,14 @@ ggsave(here::here("figures","fishscapes","cpue.by.angler.png"), height=4, width=
 
 ```
 ```{r}
-ggplot(catch.pe.f)+
+ggplot(catch.pe)+
   geom_point(aes(x=pop.density, y=anCPUE, color=as.factor(year)))+
   scale_color_manual(values=c("red","blue"))+
   theme_bw()
 
 ```
 ```{r}
-ggplot(catch.pe.f)+
+ggplot(catch.pe)+
   geom_point(aes(x=dayOfYear, y=log(anCPUE+0.01), color=as.factor(year)))+
     scale_color_manual(values=c("red","blue"))+
   theme_bw()
@@ -309,7 +315,7 @@ sim.res<-simulateResiduals(mod.3.fs.cpe)
 plot(sim.res)
 
 summary(mod.3.fs.cpe)
-
+performance::r2(mod.3.fs.cpe)
 ```
 
 Now DNR cpe
@@ -365,6 +371,7 @@ plot(sim.res, form=catch.dnr.cpe$caughtBy)
 
 
 ```{r}
+catch.pe.f<-catch.pe
 mod.0.pe<-glmmTMB(anCPUE~ln.pop.density  + year + sc.doy + sc.doy2, 
                   data=catch.pe.f, family=glmmTMB::lognormal(link="log"),
                ziformula=~ln.pop.density + 
@@ -392,7 +399,8 @@ AIC(mod.0.pe, mod.1.pe, mod.2.pe, mod.3.pe)
 sim.res<-simulateResiduals(mod.3.pe)
 plot(sim.res)
 
-summary(mod.3)
+summary(mod.3.pe)
+performance::r2(mod.3.pe)
 ```
 2018 residuals are low, Alex's are high, White Birch is high
 ```{r}
