@@ -6,7 +6,7 @@ date: "2024-03-26"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa, emmeans, effects)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4, glmmTMB, DHARMa, emmeans, effects, AUC)
 
 ```
 
@@ -655,7 +655,8 @@ between.angler<-fishscapes.full%>%
          prop.effort=angler.effort/effort.total)%>%
   arrange(prop.fish)%>%
   mutate(cum.prop.fish=cumsum(prop.fish),
-         cum.prop.effort=cumsum(prop.effort))
+         cum.prop.effort=cumsum(prop.effort))%>%
+  mutate(overall.cpue=angler.fish/angler.effort)
   
 
 #  I think this comparison might be misleading--aggregates of anglers vs. individual trips. Aggregate trips by sample id instead
@@ -737,69 +738,91 @@ fished.long.caught<-fished%>%
   dplyr::select(SurveyID, Date, Month, Year, WaterFished, County, Hours, TargetSpeciesName, ends_with("Caught"))%>%
   pivot_longer(cols=c(BluegillNumCaught:OtherNumCaught), names_to="species",values_to="numCaught")%>%
   mutate(species=str_replace(species, "NumCaught", ""),
-         cpue=numCaught/Hours)
+         cpue=numCaught/Hours)%>%
+  filter(TargetSpeciesName%in%c("Walleye","Bluegill / Sunfish","Largemouth Bass") &
+           species%in%c("Walleye","Bluegill","LGBass"))%>%
+  filter(!is.na(numCaught))%>%
+  mutate(TargetSpeciesName=ifelse(TargetSpeciesName=="Bluegill / Sunfish", "Bluegill",
+                                  ifelse(TargetSpeciesName=="Largemouth Bass", "LGBass", TargetSpeciesName)))%>%
+  filter(TargetSpeciesName==species)
 
 # lorenz plot--just LMB for now, and only angler targeting them
 
 between.angler.diary<-fished.long.caught%>%
-  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  #filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  group_by(species)%>%
   mutate(fish.total=sum(numCaught),
          effort.total=sum(Hours))%>%
-  group_by(SurveyID)%>%
-  summarize(angler.fish=sum(numCaught),
-            angler.effort=sum(Hours),
+  ungroup()%>%
+  rename("ID"=SurveyID)%>%
+  group_by(ID, species)%>%
+  summarize(nFish=sum(numCaught),
+            nHours=sum(Hours),
             fish.total=unique(fish.total),
             effort.total=unique(effort.total))%>%
   ungroup()%>%
-  mutate(prop.fish=angler.fish/fish.total,
-         prop.effort=angler.effort/effort.total)%>%
-  arrange(prop.fish)%>%
+  mutate(prop.fish=nFish/fish.total,
+         prop.effort=nHours/effort.total)%>%
+  group_by(species)%>%
+  arrange(prop.fish, .by_group=T)%>%
   mutate(cum.prop.fish=cumsum(prop.fish),
-         cum.prop.effort=cumsum(prop.effort))
+         cum.prop.effort=cumsum(prop.effort))%>%
+  ungroup()%>%
+  mutate(type="between_anglers")
 
 
 between.trip.diary<-fished.long.caught%>%
-  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  #filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  group_by(species)%>%
   mutate(fish.total=sum(numCaught),
-         effort.total=sum(Hours),
-         tripID=paste(SurveyID, Date, WaterFished, sep="_"))%>%
-  group_by(tripID)%>%
-  summarize(trip.fish=sum(numCaught),
-            trip.effort=sum(Hours),
+         effort.total=sum(Hours))%>%
+  ungroup()%>%
+  mutate(ID=paste(SurveyID, Date, WaterFished, sep="_"))%>%
+  group_by(ID, species)%>%
+  summarize(nFish=sum(numCaught),
+            nHours=sum(Hours),
             fish.total=unique(fish.total),
             effort.total=unique(effort.total))%>%
   ungroup()%>%
-  mutate(prop.fish=trip.fish/fish.total,
-         prop.effort=trip.effort/effort.total)%>%
-  arrange(prop.fish)%>%
+  mutate(prop.fish=nFish/fish.total,
+         prop.effort=nHours/effort.total)%>%
+  group_by(species)%>%
+  arrange(prop.fish, .by_group=T)%>%
   mutate(cum.prop.fish=cumsum(prop.fish),
-         cum.prop.effort=cumsum(prop.effort))
+         cum.prop.effort=cumsum(prop.effort))%>%
+  ungroup()%>%
+  mutate(type="between.trips")
 
 # imperfect; includes duplicate lakes/rivers within counties
 between.water.diary<-fished.long.caught%>%
-  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  #filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  group_by(species)%>%
   mutate(fish.total=sum(numCaught),
-         effort.total=sum(Hours),
-         waterID=paste(County, WaterFished, sep="_"))%>%
-  group_by(waterID)%>%
-  summarize(water.fish=sum(numCaught),
-            water.effort=sum(Hours),
+         effort.total=sum(Hours))%>%
+  ungroup()%>%
+  mutate(ID=paste(County, WaterFished, sep="_"))%>%
+  group_by(ID, species)%>%
+  summarize(nFish=sum(numCaught),
+            nHours=sum(Hours),
             fish.total=unique(fish.total),
             effort.total=unique(effort.total))%>%
   ungroup()%>%
-  mutate(prop.fish=water.fish/fish.total,
-         prop.effort=water.effort/effort.total)%>%
-  arrange(prop.fish)%>%
+  mutate(prop.fish=nFish/fish.total,
+         prop.effort=nHours/effort.total)%>%
+  group_by(species)%>%
+  arrange(prop.fish, .by_group=T)%>%
   mutate(cum.prop.fish=cumsum(prop.fish),
-         cum.prop.effort=cumsum(prop.effort))
+         cum.prop.effort=cumsum(prop.effort))%>%
+  ungroup()%>%
+  mutate(type="between.waters")
+
+all.plot<-rbind.data.frame(between.angler.diary, between.trip.diary, between.water.diary)
 
 
-
-ggplot()+
-  geom_line(data=between.angler.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="blue")+
-  geom_line(data=between.trip.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="red")+
-  geom_line(data=between.water.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="green")+
+ggplot(all.plot)+
+  geom_line(aes(x=cum.prop.effort, y=cum.prop.fish, color=type))+
   geom_abline(slope=1, intercept=0, linetype="dashed")+
+  facet_grid(.~species)+
   theme_bw()
 ```
 
