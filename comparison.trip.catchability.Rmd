@@ -461,13 +461,32 @@ ggplot(fs.pred)+
   geom_abline(slope=1, intercept=0, linetype="dashed")+
   theme_bw()
 ```
+
+left off here: for(i in 1:nrow(fishscapes)){
+fishscapes$caughtFish[i]<-sample(c(0,1), 1, prob=c(fishscapes$zero.pred[i], fishscapes$probCatchFish[i]))
+}
 Looking at random effects: 
-
+lakeID has basically no effect on zero probability
 ```{r}
-rand.cpue<-ranef(mod.fs.ef.cpe)
-rand.zero<-ranef(mod.fs.ef.cpe)
-```
+rand.cpue<-ranef(mod.fs.ef.cpe, condVar=T)
+rand.zero<-ranef(mod.fs.ef.cpe, condVar=T)
 
+hist(rand.zero$zi$date$`(Intercept)`)
+# is there a pattern in date effect?
+
+dates.zero<-rand.zero$zi$date
+dates.zero$date<-ymd(rownames(dates.zero))
+
+dates.zero$doy<-yday(dates.zero$date)
+dates.zero$year<-year(dates.zero$date)
+
+ggplot(dates.zero)+
+  geom_point(aes(x=doy, y=`(Intercept)`, color=as.factor(year)))+
+  theme_bw()
+
+caught
+```
+No, not really. This suggests to me that there could have been differences in weather, temperature, etc influencing catchability each day. Those last few days are around zero, maybe because there was less variation in other variables at the end of the 2019 season. (less overlap of anglers, none of dates, potentially none of lakes)
 
 
 
@@ -577,3 +596,214 @@ mod.random<-glmmTMB(cpue~(1|lakeID)+(1|date)+(1|caughtBy) ,
 simulateResiduals(mod.random, plot=T)
 ```
 some metric of fish abundance is probably necessary. without it, I get these super weird residuals
+
+
+fishscapes full
+
+```{r}
+caught.prop<-fishscapes.full%>%
+  mutate(totalFish=sum(nCaught))%>%
+  group_by(caughtBy)%>%
+  summarize(nFish=sum(nCaught),
+            totalFish=unique(totalFish))%>%
+  ungroup()%>%
+  mutate(propCatch=nFish/totalFish,
+         propAnglers=1/length(unique(fishscapes.full$caughtBy)))%>%
+  arrange(propCatch)%>%
+  mutate(cumPropCatch=cumsum(propCatch),
+         cumPropAnglers=cumsum(propAnglers))
+
+order<-caught.prop$caughtBy
+
+caught.prop$caughtBy<-factor(caught.prop$caughtBy, levels=order)
+
+ggplot(caught.prop)+
+  geom_bar(aes(x=caughtBy, y=propCatch), stat="identity")
+```
+
+Lorenz plot
+
+```{r}
+ggplot(caught.prop)+
+  geom_line(aes(x=cumPropAnglers, y=cumPropCatch))+
+  geom_abline(slope=1, intercept=0, linetype="dashed")+
+  geom_abline(slope=-1, intercept=1, linetype="dashed")+
+  theme_bw()
+```
+
+Neat, but not accounting for differences in effort. Do that one comparing between trip and between angler inequaliity
+
+then look at differences in fish size--associated with catching power intercept? 
+
+catch power as a random walk?
+
+Between angler inequality: cumulative proportion of catch by cumulative proportion of effort for each angler's contribution to the season total
+
+Between trip inequality: cumulative proportion of catch by the cumulative proportion of effort that each trip contributes to the season total
+
+```{r}
+between.angler<-fishscapes.full%>%
+  mutate(fish.total=sum(nCaught),
+         effort.total=sum(effort))%>%
+  group_by(caughtBy)%>%
+  summarize(angler.fish=sum(nCaught),
+            angler.effort=sum(effort),
+            fish.total=unique(fish.total),
+            effort.total=unique(effort.total))%>%
+  ungroup()%>%
+  mutate(prop.fish=angler.fish/fish.total,
+         prop.effort=angler.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+  
+
+#  I think this comparison might be misleading--aggregates of anglers vs. individual trips. Aggregate trips by sample id instead
+between.trip<-fishscapes.full%>%
+  mutate(fish.total=sum(nCaught),
+         effort.total=sum(effort),
+         trip=paste(sampleID, angler_num, sep="_"),
+         trip.fish=nCaught,
+         trip.effort=effort,
+         prop.fish=trip.fish/fish.total,
+         prop.effort=trip.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+
+between.lake<-fishscapes.full%>%
+  mutate(fish.total=sum(nCaught),
+         effort.total=sum(effort))%>%
+  group_by(lakeID)%>%
+  summarize(lake.fish=sum(nCaught),
+            lake.effort=sum(effort),
+            fish.total=unique(fish.total),
+            effort.total=unique(effort.total))%>%
+  ungroup()%>%
+  mutate(prop.fish=lake.fish/fish.total,
+         prop.effort=lake.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+
+
+ggplot()+
+  geom_line(data=between.angler, aes(y=cum.prop.fish, x=cum.prop.effort), color="blue")+
+  geom_line(data=between.trip, aes(y=cum.prop.fish, x=cum.prop.effort), color="red")+
+  geom_line(data=between.lake, aes(y=cum.prop.fish, x=cum.prop.effort), color="green")+
+  geom_abline(slope=1, intercept=0, linetype="dashed")+
+  theme_bw()
+```
+
+Much more inequality among trips than among anglers, but not comparing same 'sample size'--way more trip dates than unique anglers
+
+This is not unexpected, "there is inequality within, and overlap between, the trip-to-trip success of each angler" Lambert and Aronson 1993; Yao 1999
+
+other catch inequality papers: Mosindy and Duffy 2007 (musky), Van Poorten and Post 2005 (rainbow trout)
+
+
+can I compare to angler diary data? Opportunity to show changes in Gini coefficient over time if I can have access to more years. Split by species
+
+```{r}
+codes<-read_csv(here::here("data","coding.csv"))%>%
+  select(code, `Target Species`, category)%>%
+  rename("TargetSpecies"=code,
+         "TargetSpeciesName"=`Target Species`, 
+         "TargetSpeciesCat"=category)
+`%!in%`<-Negate(`%in%`)
+
+diary<-read_csv(here::here("data","angler.diary.data.csv"))%>%
+    arrange(SurveyID)%>%
+  mutate(daysMonth=ifelse(Month%in%c(9,4,6,11), 30, 
+                          ifelse(Month==2, 28, 31)),
+         date_month=as.numeric(month(mdy(Date))),
+         outsideMonth=ifelse(FishedYN==1 & date_month!=Month,1,0),
+         Year=ifelse(Month%in%c(4,5,6,7,8,9,10,11,12), 2021, 2022))%>%
+  # remove entries where participants went fishing outside the sampled calendar month
+  filter(outsideMonth==0)%>%
+  filter(Mode==1)%>%
+  filter(SurveyID!="999999")%>%
+  filter(SurveyID%!in%c(1:10))%>%
+  left_join(codes, by="TargetSpecies")%>%
+  filter(County!="99")
+
+# Do I care if they're representative? I don't think so, but worth checking to see if it changes the results to leave out emailed responses
+fished<-diary%>%
+  filter(FishedYN==1)
+
+# let's pivot thisl onger to make it easier to work with
+
+fished.long.caught<-fished%>%
+  dplyr::select(SurveyID, Date, Month, Year, WaterFished, County, Hours, TargetSpeciesName, ends_with("Caught"))%>%
+  pivot_longer(cols=c(BluegillNumCaught:OtherNumCaught), names_to="species",values_to="numCaught")%>%
+  mutate(species=str_replace(species, "NumCaught", ""),
+         cpue=numCaught/Hours)
+
+# lorenz plot--just LMB for now, and only angler targeting them
+
+between.angler.diary<-fished.long.caught%>%
+  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  mutate(fish.total=sum(numCaught),
+         effort.total=sum(Hours))%>%
+  group_by(SurveyID)%>%
+  summarize(angler.fish=sum(numCaught),
+            angler.effort=sum(Hours),
+            fish.total=unique(fish.total),
+            effort.total=unique(effort.total))%>%
+  ungroup()%>%
+  mutate(prop.fish=angler.fish/fish.total,
+         prop.effort=angler.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+
+
+between.trip.diary<-fished.long.caught%>%
+  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  mutate(fish.total=sum(numCaught),
+         effort.total=sum(Hours),
+         tripID=paste(SurveyID, Date, WaterFished, sep="_"))%>%
+  group_by(tripID)%>%
+  summarize(trip.fish=sum(numCaught),
+            trip.effort=sum(Hours),
+            fish.total=unique(fish.total),
+            effort.total=unique(effort.total))%>%
+  ungroup()%>%
+  mutate(prop.fish=trip.fish/fish.total,
+         prop.effort=trip.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+
+# imperfect; includes duplicate lakes/rivers within counties
+between.water.diary<-fished.long.caught%>%
+  filter(species=="LGBass" & TargetSpeciesName=="Largemouth Bass")%>%
+  mutate(fish.total=sum(numCaught),
+         effort.total=sum(Hours),
+         waterID=paste(County, WaterFished, sep="_"))%>%
+  group_by(waterID)%>%
+  summarize(water.fish=sum(numCaught),
+            water.effort=sum(Hours),
+            fish.total=unique(fish.total),
+            effort.total=unique(effort.total))%>%
+  ungroup()%>%
+  mutate(prop.fish=water.fish/fish.total,
+         prop.effort=water.effort/effort.total)%>%
+  arrange(prop.fish)%>%
+  mutate(cum.prop.fish=cumsum(prop.fish),
+         cum.prop.effort=cumsum(prop.effort))
+
+
+
+ggplot()+
+  geom_line(data=between.angler.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="blue")+
+  geom_line(data=between.trip.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="red")+
+  geom_line(data=between.water.diary, aes(x=cum.prop.effort, y=cum.prop.fish), color="green")+
+  geom_abline(slope=1, intercept=0, linetype="dashed")+
+  theme_bw()
+```
+
+  
+
+Next step:
+- filter to lakes with biological survey data--fit catch curve with random effects? See how much data is actually left. 
