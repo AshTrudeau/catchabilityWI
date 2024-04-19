@@ -66,33 +66,49 @@ ggplot(cpue.pe.wye)+
   theme_bw()
 ```
 
-
+used month instead of day of year--more range in  season with this dataset
 ```{r}
-mod.null.wye.pe<-glmmTMB(cpue~.pop.density + month, 
+mod.null.wye.pe<-glmmTMB(cpue~ln.pop.density + month, 
                   data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
-               ziformula=~.pop.density + month)
+               ziformula=~ln.pop.density + month)
 
-mod.wbic.wye.pe<-glmmTMB(cpue~.pop.density + month+(1|wbic) , 
+mod.wbic.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic) , 
                   data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
-               ziformula=~.pop.density + month+(1|wbic))
+               ziformula=~ln.pop.density + month+(1|wbic))
 
-mod.wbic.year.wye.pe<-glmmTMB(cpue~.pop.density + month+(1|wbic)+(1|year) , 
+mod.year.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|year) , 
                   data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
-               ziformula=~.pop.density + month+(1|wbic)+(1|year))
+               ziformula=~ln.pop.density + month+(1|year))
 
-mod.wbic.day.wye.pe<-glmmTMB(cpue~.pop.density + month+(1|wbic)+(1|sample.date) , 
+mod.date.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|sample.date) , 
                   data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
-               ziformula=~.pop.density +
+               ziformula=~ln.pop.density + month+(1|sample.date))
+
+
+
+mod.wbic.year.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + month+(1|wbic)+(1|year))
+
+mod.wbic.date.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|sample.date) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
                  month+(1|wbic)+(1|sample.date))
 
-mod.wbic.year.day.wye.pe<-glmmTMB(cpue~.pop.density + month+(1|wbic)+(1|year)+(1|sample.date) , 
+mod.year.date.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|year)+(1|sample.date) , 
                   data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
-               ziformula=~.pop.density +
+               ziformula=~ln.pop.density +
+                 month+(1|year)+(1|sample.date))
+
+mod.wbic.year.date.wye.pe<-glmmTMB(cpue~ln.pop.density + month+(1|wbic)+(1|year)+(county|sample.date) , 
+                  data=cpue.pe.wye, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
                  month+(1|wbic)+(1|year)+(1|sample.date))
 
-AIC(mod.null.wye.pe, mod.wbic.wye.pe, mod.wbic.year.wye.pe, mod.wbic.day.wye.pe, mod.wbic.year.day.wye.pe)
+# added county effect to mod.wbic.year.date.wye.pe. Added mod.wye.pe to take original's place (without county random slope)
+AIC(mod.null.wye.pe, mod.wbic.wye.pe, mod.year.wye.pe, mod.date.wye.pe, mod.wbic.year.wye.pe, mod.wbic.date.wye.pe, mod.year.date.wye.pe, mod.wbic.year.date.wye.pe, mod.wye.pe)
 
-sim.resid<-simulateResiduals(mod.wbic.year.day.wye.pe)
+sim.resid<-simulateResiduals(mod.wbic.year.date.wye.pe)
 plot(sim.resid)
 
 mod.wye.pe<-mod.wbic.year.day.wye.pe
@@ -102,6 +118,81 @@ summary(mod.wye.pe)
 performance::r2(mod.wye.pe)
 ```
 woof, incredibly low r2
+
+Does the same thing happen if I sample out a similar sample size from the summer? 
+
+```{r}
+# filter to 2018 and 2019, which has  35 unique lakes and 3816 observations. Need to stick with dates that have multiple observations
+
+
+dateObs<-cpue.pe.wye.f%>%
+  group_by(sample.date)%>%
+  summarize(n=n())%>%
+  filter(n>10)
+
+cpue.pe.wye.f<-filter(cpue.pe.wye, year%in%c(2018, 2019) & sample.date%in%dateObs$sample.date)
+
+pull.dates<-sample(dateObs$sample.date, 46)
+
+# rather than selecting by wbic, let's sample by sample.date to ensure we can fit the random effect
+# selecting 46 random dates to correspond with fishscapes data
+
+# nObs<-cpue.pe.wye.f%>%
+#   group_by(wbic)%>%
+#   summarize(nObs=n())%>%
+#   ungroup()%>%
+#   filter(nObs>20)
+# 
+# 
+# # then r andomly select 13 lakes
+# wbic.unique<-unique(nObs$wbic)
+# wbic.13<-sample(wbic.unique, size=13, replace=F)
+# wbic.13
+
+# fishscapes data has between 9 and 27 observations at each lake. Let's select 19 from each lake
+cpue.pe.wye.sample<-cpue.pe.wye.f%>%
+  mutate(year=as.factor(year))%>%
+  filter(sample.date%in%pull.dates)%>%
+    slice_sample(n=250)%>%
+  mutate(year=as.factor(year),
+         doy=yday(sample.date),
+         doy2=doy^2,
+         sc.doy=scale(doy),
+         sc.doy2=scale(doy2))
+# close enough; more lakes than fishscapes (45) but enough repeated date samples, hopefully
+
+sub.mod<-glmmTMB(cpue~ln.pop.density + year+(1|wbic)+(county|sample.date) , 
+                  data=cpue.pe.wye.sample, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
+                 sc.doy+sc.doy2+year+(1|wbic)+(1|sample.date))
+sim.resid<-simulateResiduals(sub.mod)
+plot(sim.resid)
+
+performance::r2(sub.mod)
+```
+```{r}
+summary(sub.mod)
+```
+Just in case, break it up into zi and conditional to get r2
+
+```{r}
+
+
+sub.mod.zi<-glmmTMB(cpue~1 , 
+                  data=cpue.pe.wye.sample, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density +
+                 sc.doy+sc.doy2+year+(1|wbic)+(1|sample.date))
+# convergence problem--ignoring zi model
+
+cpue.pe.wye.sample.no.0<-filter(cpue.pe.wye.sample, cpue>0)
+
+sub.mod.cond<-glmmTMB(cpue~ln.pop.density + year+(1|wbic)+(1|sample.date) , 
+                  data=cpue.pe.wye.sample.no.0, family=glmmTMB::lognormal(link="log"))
+performance::r2(sub.mod.cond)
+
+```
+
+
 
 ```{r}
 cpue.pe.wye$mod.pred<-predict(mod.wye.pe, type="response")
@@ -305,7 +396,6 @@ mod.lakeID.lmb.pe<-glmmTMB(cpue~ln.pop.density + year +(1|lakeID) ,
 
 
 
-
 mod.caughtBy.lmb.pe<-glmmTMB(cpue~ln.pop.density + year +(1|caughtBy) , 
                   data=fishscapes, family=glmmTMB::lognormal(link="log"),
                ziformula=~ln.pop.density+ sc.doy + sc.doy2 +year+(1|caughtBy))
@@ -322,9 +412,10 @@ mod.lakeID.date.lmb.pe<-glmmTMB(cpue~ln.pop.density + year+(1|lakeID)+(1|date) ,
                   data=fishscapes, family=glmmTMB::lognormal(link="log"),
                ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|lakeID)+(1|date))
 
-mod.caughtBy.date.lmb.pe<-glmmTMB(cpue~ln.pop.density + year+(1|caughtBy)+(1|date) , 
+mod.caughtBy.date.lmb.pe<-glmmTMB(cpue~ln.pop.density +year+(1|caughtBy)+(1|date) , 
                   data=fishscapes, family=glmmTMB::lognormal(link="log"),
                ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|caughtBy)+(1|date))
+
 mod.lakeID.caughtBy.date.lmb.pe<-glmmTMB(cpue~ln.pop.density +year+(1|lakeID)+(1|date)+(1|caughtBy) , 
                   data=fishscapes, family=glmmTMB::lognormal(link="log"),
                ziformula=~ln.pop.density+ sc.doy + sc.doy2+year+(1|lakeID)+(1|date)+(1|caughtBy) )
@@ -342,17 +433,207 @@ Interesting; caughtBy and date random effects are best fits; does not include wb
 ```{r}
 summary(mod.fs.pe)
 performance::r2(mod.fs.pe)
+performance::r2_zeroinflated(mod.fs.pe)
 ```
 higher, but not incredible r2. 
 
+Closer look at variance explained
+
+```{r}
+# full model
+sd.response<-sd(fishscapes$cpue)
+var.response<-sd.response^2
+
+predictions<-predict(mod.fs.pe, type="response")
+sd.pred<-sd(predictions)
+var.pred<-sd.pred^2
+
+# null model
+# I'm calling model with only fixed effects the null model here
+mod.null.lmb.pe<-glmmTMB(cpue~ln.pop.density + year, 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density+ sc.doy + sc.doy2 +year)
+
+predictions.null<-predict(mod.null.lmb.pe)
+var.pred.null<-var(predictions.null)
+
+predictions.date.only<-predict(mod.date.lmb.pe)
+var.pred.date.only<-var(predictions.date.only)
+
+predictions.caughtBy.only<-predict(mod.caughtBy.lmb.pe)
+var.pred.caughtBy.only<-var(predictions.caughtBy.only)
+```
+
+look specifically at binomial model and lognormal random effects separately--i think the combined hurdle model r2 outputs are obscuring stuff
+
+```{r}
+mod.caughtBy.date.lmb.pe.zi<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|caughtBy)+(1|date))
+summary(mod.caughtBy.date.lmb.pe.zi)
+
+performance::r2_zeroinflated(mod.caughtBy.date.lmb.pe.zi)
+
+mod.caughtBy.date.lmb.pe.zi.fixed<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year)
+performance::r2_zeroinflated(mod.caughtBy.date.lmb.pe.zi.fixed)
+
+mod.caughtBy.date.lmb.pe.zi.angler<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|caughtBy))
+performance::r2_zeroinflated(mod.caughtBy.date.lmb.pe.zi.angler)
+
+mod.caughtBy.date.lmb.pe.zi.date<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|date))
+performance::r2_zeroinflated(mod.caughtBy.date.lmb.pe.zi.date)
+
+
+```
+Now the same but without fixed effects
+
+```{r}
+mod.zi.full<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year + (1|caughtBy) + (1|date))
+performance::r2_zeroinflated(mod.zi.full)
+
+mod.zi.fixed.only<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year)
+performance::r2_zeroinflated(mod.zi.fixed.only)
+
+mod.zi.random.only<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~1+(1|caughtBy) + (1|date))
+performance::r2_zeroinflated(mod.zi.random.only)
+
+mod.zi.caughtBy.only<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~1+(1|caughtBy) )
+performance::r2_zeroinflated(mod.zi.caughtBy.only)
+
+mod.zi.date.only<-glmmTMB(cpue~1 , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~1+ (1|date))
+performance::r2_zeroinflated(mod.zi.date.only)
+
+
+```
+
+
+
+r2 for zero model only is 0.18
+
+```{r}
+fishscapes.no.0<-filter(fishscapes, cpue!=0)
+
+mod.caughtBy.date.lmb.pe.conditional<-glmmTMB(cpue~ln.pop.density +year+(1|caughtBy)+(1|date) , 
+                  data=fishscapes.no.0, family=glmmTMB::lognormal(link="log"))
+summary(mod.caughtBy.date.lmb.pe.conditional)
+performance::r2(mod.caughtBy.date.lmb.pe.conditional)
+
+```
+```{r}
+mod.caughtBy.date.lmb.pe.conditional.null<-glmmTMB(cpue~ln.pop.density +year, 
+                  data=fishscapes.no.0, family=glmmTMB::lognormal(link="log"))
+summary(mod.caughtBy.date.lmb.pe.conditional.null)
+performance::r2(mod.caughtBy.date.lmb.pe.conditional.null)
+
+```
+```{r}
+mod.caughtBy.date.lmb.pe.conditional.caughtBy<-glmmTMB(cpue~ln.pop.density +year+(1|caughtBy), 
+                  data=fishscapes.no.0, family=glmmTMB::lognormal(link="log"))
+summary(mod.caughtBy.date.lmb.pe.conditional.caughtBy)
+performance::r2(mod.caughtBy.date.lmb.pe.conditional.caughtBy)
+
+```
+```{r}
+mod.caughtBy.date.lmb.pe.conditional.date<-glmmTMB(cpue~ln.pop.density +year+(1|date), 
+                  data=fishscapes.no.0, family=glmmTMB::lognormal(link="log"))
+summary(mod.caughtBy.date.lmb.pe.conditional.date)
+performance::r2(mod.caughtBy.date.lmb.pe.conditional.date)
+
+```
+
+```{r}
+mod.fs.pe<-glmmTMB(cpue~ln.pop.density +year+(1|caughtBy)+(1|date) , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|caughtBy)+(1|date))
+mod.fs.pe.date<-glmmTMB(cpue~ln.pop.density +year+(1|date) , 
+                  data=fishscapes, family=glmmTMB::lognormal(link="log"),
+               ziformula=~ln.pop.density + sc.doy + sc.doy2+year+(1|date))
+
+```
+
 ```{r}
 fishscapes$mod.pred<-predict(mod.fs.pe, type="response")
+fishscapes$mod.pred.noCaughtBy<-predict(mod.fs.pe.date, type="response")
 
 ggplot(fishscapes)+
   geom_point(aes(x=pop.density, y=cpue))+
   geom_point(aes(x=pop.density, y=mod.pred), color="red")+
+ # geom_point(aes(x=pop.density, y=mod.pred.noCaughtBy), color="blue")+
   theme_bw()
 ```
+
+
+Now look closer at values of random intercepts
+
+```{r}
+random<-ranef(mod.fs.pe)
+zi.random<-random$zi
+cond.random<-random$cond
+
+zi.day.effect<-zi.random$date
+zi.day.effect$date<-rownames(zi.day.effect)
+zi.day.effect$intercept<-exp(zi.day.effect$`(Intercept)`)/(1+exp(zi.day.effect$`(Intercept)`))
+
+ggplot(zi.day.effect)+
+  geom_point(aes(x=date, y=intercept))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=90))
+ggsave(here::here("figures","fishscapes","zi.date.effect.png"), height=4, width=6)
+
+
+zi.angler.effect<-zi.random$caughtBy
+zi.angler.effect$caughtBy<-rownames(zi.angler.effect)
+zi.angler.effect$intercept<-exp(zi.angler.effect$`(Intercept)`)/(1+exp(zi.angler.effect$`(Intercept)`))
+
+ggplot(zi.angler.effect)+
+  geom_point(aes(x=caughtBy, y=intercept))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=90))
+ggsave(here::here("figures","fishscapes","zi.angler.effect.png"), height=4, width=6)
+
+```
+
+```{r}
+cond.day.effect<-cond.random$date
+cond.day.effect$date<-rownames(cond.day.effect)
+cond.day.effect$intercept<-cond.day.effect$`(Intercept)`
+
+ggplot(cond.day.effect)+
+  geom_point(aes(x=date, y=exp(intercept)))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=90))
+ggsave(here::here("figures","fishscapes","cond.date.effect.png"), height=4, width=6)
+
+
+cond.angler.effect<-cond.random$caughtBy
+cond.angler.effect$caughtBy<-rownames(cond.angler.effect)
+cond.angler.effect$intercept<-cond.angler.effect$`(Intercept)`
+
+ggplot(cond.angler.effect)+
+  geom_point(aes(x=caughtBy, y=exp(intercept)))+
+  theme_bw()+
+  theme(axis.text.x=element_text(angle=90))
+ggsave(here::here("figures","fishscapes","cond.angler.effect.png"), height=4, width=6)
+
+```
+
+
 Repeat, but with ef cpe
 
 ```{r}
@@ -707,7 +988,7 @@ can I compare to angler diary data? Opportunity to show changes in Gini coeffici
 
 ```{r}
 codes<-read_csv(here::here("data","coding.csv"))%>%
-  select(code, `Target Species`, category)%>%
+  dplyr::select(code, `Target Species`, category)%>%
   rename("TargetSpecies"=code,
          "TargetSpeciesName"=`Target Species`, 
          "TargetSpeciesCat"=category)
@@ -824,9 +1105,68 @@ ggplot(all.plot)+
   geom_abline(slope=1, intercept=0, linetype="dashed")+
   facet_grid(.~species)+
   theme_bw()
+ggsave(here::here("figures","lorenz.angler.diaries.2021.png"), height=4, width=10)
 ```
-
-  
 
 Next step:
 - filter to lakes with biological survey data--fit catch curve with random effects? See how much data is actually left. 
+- add musky for giggles?
+```{r}
+dnr.surveys<-get_fmdb_surveys(year=c(2021))%>%
+  mutate(waterbody_county=paste(waterbody.name, county, sep="_"),
+         waterbody_county=tolower(waterbody_county))
+
+diary.comp<-diary%>%
+  filter(WaterFished!="99")%>%
+  mutate(waterbodyName=str_replace_all(WaterFished, " ", "_"),
+         waterbody_county=paste(waterbodyName, County, sep="_"),
+         waterbody_county=tolower(waterbody_county))%>%
+  filter(waterbody_county%in%dnr.surveys$waterbody_county)
+
+dnr.comp<-dnr.surveys%>%
+  filter(waterbody_county%in%diary.comp$waterbody_county)%>%
+  filter(primary.survey.purpose%in%c("fisheries_assessments_lakes_early_spring_wae_mue",
+                                     "fisheries_assessments_lakes_late_spring_bass_pan"))
+
+diary.surveys<-diary.comp%>%
+  filter(waterbody_county%in%dnr.comp$waterbody_county)
+  
+
+# how many repeated trips did we get?
+
+repeats<-diary.surveys%>%
+  group_by(SurveyID)%>%
+  summarize(n=n())
+
+View(diary.surveys%>%
+  group_by(Date)%>%
+  summarize(n=n()))
+
+# hey! that's not too bad!
+
+# by target species?
+
+diary.targets<-diary.surveys%>%
+  group_by(TargetSpeciesName)%>%
+  summarize(n=n())
+# a little over 200 entries for walleye as a target
+
+diary.wae<-diary.surveys%>%
+  filter(TargetSpeciesName=="Walleye")%>%
+  mutate(cpue=WalleyeNumCaught/Hours)%>%
+  left_join()
+
+ggplot(diary.targets)+
+  geom_point(aes(x=))
+```
+
+
+fit catch curve
+
+```{r}
+# set up data
+# do model selection
+diary.mod.null<-
+# poke random effects
+```
+

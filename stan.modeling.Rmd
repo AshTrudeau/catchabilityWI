@@ -1,0 +1,508 @@
+---
+title: "trying stan"
+output: html_document
+date: "2024-04-12"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan)
+```
+
+Generate some fake data to start learning how to use stan. To keep it reasonably simple, only anglerID random intercept and the relationships of population to catch rate. 
+
+```{r}
+set.seed(7328)
+# first functions predicting catch (yes/no) and cpue 
+zero.fun<-function(anglerInt.zero, pop){
+  ln.pop=log(pop)
+  prob.zero=exp(anglerInt.zero-2*ln.pop)/(1+exp(anglerInt.zero-2*ln.pop))
+  prob.one=1-prob.zero
+  #catchSomething=sample(c(1,0), length(prob.zero), replace=T, prob=c(prob.one, prob.zero))
+  catchSomething=rbinom(n=length(prob.zero), size=1, prob=prob.one)
+  return(catchSomething)
+}
+
+catch.fun<-function(anglerInt.catch, ln.pop, catchSomething, beta=0.48){
+  cpue=ifelse(catchSomething==1, exp(anglerInt.catch+ln.pop*beta), 0)
+  return(cpue)
+}
+
+# these are probably correlated irl, but I won't do that here
+anglerInt.zero<-rnorm(25, 2.75, 2)
+anglerInt.catch<-rnorm(25, -1.56, 0.145)
+# 
+# 
+
+anglerInt.zero<-rnorm(25, 4, 2.002)
+anglerInt.catch<-rnorm(25, -1, 0.5)
+
+
+# population DENSITY
+fishPop<-data.frame(lakeID=seq(1:10),
+                    pop=round(rnorm(n=10, mean=35, sd=10)))
+fishPop.rep<-as.data.frame(sapply(fishPop, rep.int, times=25))
+
+fishPop.rep$ln.pop<-log(fishPop.rep$pop)
+
+anglerInt<-data.frame(anglerID=seq(1:25),
+                      anglerInt.zero=anglerInt.zero,
+                      anglerInt.catch=anglerInt.catch)%>%
+  slice(rep(1:n(), each=10))
+
+
+fake.df<-cbind.data.frame(anglerInt, fishPop.rep)
+  
+fake.df$catchSomething<-zero.fun(anglerInt.zero=fake.df$anglerInt.zero, pop=fake.df$pop)
+
+fake.df$cpue<-catch.fun(anglerInt.catch=fake.df$anglerInt.catch, ln.pop=fake.df$ln.pop, catchSomething=fake.df$catchSomething)
+
+```
+fake data has a mix of catch rates, zero and nonzero. I fiddled with the intercepts (simulated) to get a higher proportion of zeroes and a greater range of nonzero catch rates. 
+
+Forum post about hurdle models in stan https://discourse.mc-stan.org/t/hierarchical-hurdle-model-in-stan/26978 
+
+
+For fish PEs consider FSA package https://fishr-core-team.github.io/FSA/ 
+Statistical Rethinking by McElreath is available through the library
+
+rstanarm package has 'canned' models that I could use, but will be less flexible https://mc-stan.org/rstanarm/articles/glmer.html
+
+here's a vignette that could be helpful: https://mc-stan.org/rstanarm/articles/glmer.html 
+
+alternatively, introduction to Stan usin gRStan https://cran.r-project.org/web/packages/rstan/vignettes/rstan.html 
+Starting from the beginning with RStan
+
+workflow: 
+1. write model log posterior density in Stan
+2. Translate to C++ with stanc()
+3. Compile C++ to create DSO to load in R
+4. Run DSO to sample posterior
+5. Diagnose nonconvergence
+6. Inference from posterior sample
+```{r}
+schools_data=list("J"=8,
+                  "y"=c(28, 8, -3, 7, -1, 1, 18, 12),
+                  "sigma"=c(15, 10, 16, 11, 9, 11, 10, 18))
+
+# made a .stan file and put this there. named "tutorial.mod.stan"
+
+# schools.stan<-"data {
+#   int<lower=0> J;          // number of schools 
+#   real y[J];               // estimated treatment effects
+#   real<lower=0> sigma[J];  // s.e. of effect estimates 
+# }
+# parameters {
+#   real mu; 
+#   real<lower=0> tau;
+#   vector[J] eta;
+# }
+# transformed parameters {
+#   vector[J] theta;
+#   theta = mu + tau * eta;
+# }
+# model {
+#   target += normal_lpdf(eta | 0, 1);
+#   target += normal_lpdf(y | theta, sigma);
+# }"
+
+```
+
+data specifies data conditioned upon in Bayes Rule. Data as integre or real can be vectors or arrays (specyfing dimensions) Can constrain data (in this example, lower bound of 0)
+
+parameters declares parameters whose posterior distribution is sought
+
+Instead of directly estimating theta, estimating an eta for each theta (school effect), scaled by tau and shifted by mu
+
+IMPORTANT: Stan's notation for normal distribution is (mean, standard deviation) (not mean, variance)
+
+Could also be less efficient and loop over the js:
+
+for (j in 1:J) 
+  target += normal_lpdf(y[j] | theta[j],sigma[j]);
+  
+  tool to find names of Stan functions
+  
+```{r}
+lookup("dnorm")
+```
+  
+  ohhh that's super cool
+  
+  Note: always add a blank line at the end of the .stan file or it won't read completely
+  
+```{r}
+fit1 <- stan(
+  file = "schools.stan",  # Stan program
+  data = schools_data,    # named list of data
+  chains = 4,             # number of Markov chains
+  warmup = 1000,          # number of warmup iterations per chain
+  iter = 2000,            # total number of iterations per chain
+  cores = 1,              # number of cores (could use one per chain)
+  refresh = 0             # no progress shown
+  )
+
+print(fit1, pars=c("theta", "mu", "tau", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit1, pars=c("mu","tau"), inc_warmup=TRUE, nrow=2)
+```
+  
+```{r}
+# all chains combined
+sampler_params <- get_sampler_params(fit1, inc_warmup = TRUE)
+summary(do.call(rbind, sampler_params), digits = 2)
+```
+```{r}
+# all chains combined
+sampler_params <- get_sampler_params(fit1, inc_warmup = TRUE)
+summary(do.call(rbind, sampler_params), digits = 2)
+```
+
+```{r}
+lapply(sampler_params, summary, digits = 2)
+```
+divergent transitions are a problem--shouldn't happen after warmup
+
+Here's the suggested pairs() diagnosis
+
+```{r}
+pairs(fit1, pars=c("mu","tau","lp__"), las=1)
+```
+marginal distribution of each parameter--histograms
+
+```{r}
+summary(fit1)
+```
+
+
+```{r}
+my_sso<-launch_shinystan(fit1)
+```
+Now starting with the data I simulated, try building some models
+
+I'm starting with a binomial regression: did they catch somethign or not? 
+First, no random effects, just a response to population (assuming no measurement error)
+
+
+zero.fun<-function(anglerInt.zero, pop){
+  ln.pop=log(pop)
+  prob.zero=exp(anglerInt.zero-2*ln.pop)/(1+exp(anglerInt.zero-2*ln.pop))
+  prob.one=1-prob.zero
+  #catchSomething=sample(c(1,0), length(prob.zero), replace=T, prob=c(prob.one, prob.zero))
+  catchSomething=rbinom(n=length(prob.zero), size=1, prob=prob.one)
+  return(catchSomething)
+}
+
+catch.fun<-function(anglerInt.catch, ln.pop, catchSomething, beta=0.48){
+  cpue=ifelse(catchSomething==1, exp(anglerInt.catch+ln.pop*beta), 0)
+  return(cpue)
+}
+
+
+
+```{r}
+# population density and cpue + some random error
+cpue.q<-1.6
+cpue.beta<-0.2
+
+PE<-rgamma(250, 25, 1)
+ln.pe<-log(PE)
+
+cpue<-cpue.q*PE^cpue.beta+rnorm(250, mean=0, sd=1)
+
+alpha<-4
+beta<-c(-1)
+catchSomethingProb<-1/(1+(1/exp(alpha+beta*ln.pe)))
+
+catchNothingProb<-1-catchSomethingProb
+
+catchSomething<-rbinom(n=250, size=1, prob=catchSomethingProb)
+  
+
+simple.fake.data<-data.frame(PE=PE,
+                             ln.pe=ln.pe,
+                             cpue=cpue,
+                             catchSomething=catchSomething)
+simple.fake.data$cpue=ifelse(catchSomething==0, 0, simple.fake.data$cpue)
+
+# df.binom<-list(lnPop=as.vector(log(fake.df$pop)),
+#                catchSomething=fake.df$catchSomething,
+#                N=length(fake.df$ln.pop))
+
+binom.data<-list(lnPop=simple.fake.data$ln.pe,
+                 catchSomething=simple.fake.data$catchSomething,
+                 N=length(simple.fake.data$PE))
+
+fit.binom<-stan(
+  file="fake.binom.stan",
+  data=binom.data,
+  chains=4, 
+  warmup=1000, 
+  iter=2000,
+  cores=1, 
+  refresh=0
+)
+
+summary(fit.binom)
+
+print(fit.binom, pars=c("alpha", "beta", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit.binom, pars=c("alpha","beta"), inc_warmup=FALSE, nrow=2)
+
+df_draws<-as.data.frame(fit.binom)
+
+hist(df_draws$alpha)
+hist(df_draws$beta)
+```
+That ran fine; no errors, params make sense
+
+Now trying the same thing, but population is measured with error
+
+yeah, adding priors improved convergence (Rhat=1)
+
+```{r}
+
+cpue.q<-1.6
+cpue.beta<-0.2
+
+PE<-rgamma(1000, 25, 1)
+#error<-rgamma(1000, shape=5,rate=1)
+error<-rnorm(1000,0,5)
+PE.error<-PE+error
+
+# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
+# ln.pe<-log(PE.error)
+# 
+# sd.error<-sqrt(5)/1
+# 
+# ln.pe.sd<-sd.error/PE
+
+
+
+cpue<-cpue.q*PE.error^cpue.beta+rnorm(1000, mean=0, sd=1)
+
+lncpue<-log(cpue.q*PE.error^cpue.beta+rnorm(1000, mean=0, sd=1))
+
+lncpue<-log(cpue.q)+PE.error
+
+alpha<-4
+beta<-c(-1)
+catchSomethingProb<-1/(1+(1/exp(alpha+beta*ln.pe)))
+
+catchNothingProb<-1-catchSomethingProb
+
+catchSomething<-rbinom(n=1000, size=1, prob=catchSomethingProb)
+  
+
+simple.fake.data.error<-data.frame(PE=PE.error,
+                                   pe_se=error,
+                                   cpue=cpue,
+                                   catchSomething=catchSomething)
+simple.fake.data.error$cpue=ifelse(catchSomething==0, 0, simple.fake.data.error$cpue)
+
+# df.binom<-list(lnPop=as.vector(log(fake.df$pop)),
+#                catchSomething=fake.df$catchSomething,
+#                N=length(fake.df$ln.pop))
+
+# 'pop' is true population that is actually unknown
+# 'PE' is the estimate of the population with error
+# 'SE_pe' is the standard error of the PE
+
+fake.df.error<-list(N=length(simple.fake.data.error$PE),
+                    PE=simple.fake.data.error$PE,
+                    se_pe=rep(10, 1000),
+                    catchSomething=simple.fake.data.error$catchSomething)
+
+
+
+# df.binom.error<-list(N=length(fake.df.error$catchSomething),
+#                      PE=rnorm(length(fake.df.error$pop), mean=fake.df.error$pop,
+#                               sd=fake.df.error$se_pe),
+#                      se_pe=fake.df.error$se_pe,
+#                      catchSomething=fake.df.error$catchSomething)
+#   
+
+fit.binom.error<-stan(
+  file="fake.binom.error.stan",
+  data=fake.df.error,
+  chains=1, 
+  warmup=1000, 
+  iter=2000,
+  control=list(test_grad=T),
+  cores=1, 
+  refresh=0
+  
+)
+# trying simpler data (no differences among 'anglers', no repeated lakes), and revising the error distributions in the stan code, trying larger sample size
+
+# no, same problem even with simpler data. probably something wrong with the model as written. The parameters actually aren't terribly off, but I think I need to change the HMC settings to deal with those divergences. 
+summary(fit.binom.error)
+
+print(fit.binom.error, pars=c("alpha", "beta", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit.binom.error, pars=c("alpha","beta"), inc_warmup=FALSE, nrow=2)
+
+df_draws<-as.data.frame(fit.binom)
+
+
+```
+Chains end up in the right place, but don't quite converge, and lots of divergences. Stepping away from th is for a moment to instead work on teh catch rate (linear) model. Maybe something helpful will come up working through that. 
+
+
+  pe_mu and pe_sigma had big convergence issues
+  
+  
+```{r}
+
+
+simple.fake.data.no0<-data.frame(lnPE=log(PE),
+                                   cpue=cpue)
+
+linear.data<-list(N=length(simple.fake.data.no0$lnPE),
+                  lnPE=simple.fake.data.no0$lnPE,
+                  cpue=simple.fake.data.no0$cpue)
+
+
+fit.linear<-stan(
+  file="fake.log.linear.stan",
+  data=linear.data,
+  chains=4, 
+  warmup=1000, 
+  iter=2000,
+  cores=4, 
+  refresh=0
+)
+summary(fit.linear)
+
+print(fit.linear, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit.linear, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2)
+
+df_draws<-as.data.frame(fit.binom)
+
+
+
+
+```
+  That worked great; now linear with error in PE
+  
+PE<-rgamma(1000, 25, 1)
+error<-rgamma(1000, shape=5,rate=1)
+
+PE.error<-PE+error
+
+# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
+ln.pe<-log(PE.error)
+
+sd.error<-sqrt(5)/1
+
+ln.pe.sd<-sd.error/PE
+
+
+
+
+  
+```{r}
+cpue.q<-1.6
+cpue.beta<-0.2
+
+#PE<-rgamma(100, 25, 1)
+PE<-rnorm(100, 1200, 500)
+
+sd.error<-runif(100, 0,2)
+
+error<-rnorm(100, 0, sd.error)
+
+PE.error<-PE+error
+
+# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
+#ln.pe<-log(PE.error)
+
+# I think this was the problem; it should have had a multiplicative error term
+#cpue<-cpue.q*(PE.error^cpue.beta)*rlnorm(100, meanlog=0, sdlog=1)
+
+ lncpue<-log(cpue.q)+cpue.beta*log(PE.error)+rnorm(100, 0, 1)
+ cpue<-exp(lncpue)
+
+simple.fake.data.no0.error<-data.frame(PE=PE.error,
+                                       #pe_sd=sd.error,
+                                       cpue=cpue)
+
+linear.error.data<-list(N=length(simple.fake.data.no0.error$PE),
+                        pe_sd=sd.error,
+                  PE=simple.fake.data.no0.error$PE,
+                  cpue=simple.fake.data.no0.error$cpue)
+# if initialization fails, constrain the priors
+
+fit.linear.error<-stan(
+  file="fake.log.linear.error.stan",
+  data=linear.error.data,
+  chains=4, 
+  warmup=1000, 
+  iter=2000,
+  cores=4, 
+  refresh=0
+)
+
+summary(fit.linear.error)
+
+print(fit.linear.error, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit.linear.error, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2)
+
+df_draws<-as.data.frame(fit.binom)
+
+
+```
+  
+  ok let's try a simpler example
+  I got this to work with observation-specific error terms
+  
+  Now I'm going to start slowly transforming it into the cpue model to see where it goes wrong
+  
+```{r}
+alpha<-0.2
+beta<-5
+
+N<-100
+
+#true_x<-rnorm(100, mean=25, sd=10)
+#true_x<-rgamma(100, 25, 1)
+# true x alpha  is 25,  beta is 1
+true_x<-rlnorm(100, 0,1)
+
+sd_meas<-runif(100, 0, 0.1)
+# multiplicative error term for gamma distribution?
+x_meas<-true_x*rlnorm(100, 0, sd_meas)
+
+y<-x_meas*beta+alpha+rnorm(100, 0, 5)
+
+simpler.data<-list(N=N,
+                   true_x=true_x,
+                   x_meas=x_meas,
+                   sd_meas=sd_meas,
+                   y=y)
+
+fit.simple.error<-stan(
+  file="simpler.error.lm.stan",
+  data=simpler.data,
+  chains=1, 
+  warmup=1000, 
+  iter=2000,
+  cores=1, 
+  refresh=0
+)
+
+summary(fit.simple.error)
+
+print(fit.simple.error, pars=c("alpha", "beta", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit.simple.error, pars=c("alpha","beta"), inc_warmup=FALSE, nrow=2)
+
+df_draws<-as.data.frame(fit.simple.error)
+
+
+
+```
+  
+  
