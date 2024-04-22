@@ -1,0 +1,54 @@
+---
+title: "testing zero inflation"
+output: html_document
+date: "2024-04-19"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, fitdistrplus)
+```
+
+read in fishscapes data first
+
+```{r}
+fs.data<-read_csv(here("data","fishscapes.cpue.pe.ef.cpe.csv"))
+hist(fs.data$anCPUE)
+hist(fs.data$nCaught)
+
+# actually let'd do absolute catch
+
+fit.pois<-fitdist(fs.data$nCaught, "pois")
+fit.nbinom<-fitdist(fs.data$nCaught, "nbinom")
+
+plot(fit.pois)
+plot(fit.nbinom)
+```
+
+```{r}
+hist(fs.data$anCPUE)
+
+fs.data.f<-filter(fs.data, anCPUE>0)
+
+fit.gamma<-fitdist(fs.data.f$anCPUE, "gamma")
+plot(fit.gamma)
+```
+
+
+Compare it to angler diaries
+
+```{r}
+data.diary<-read_csv(here("data","angler.diary.data.csv"))
+
+hist(data.diary$LGBassNumCaught)
+hist(data.diary$WalleyeNumCaught)
+
+
+fit.pois<-fitdist(data.diary$LGBassNumCaught, "pois")
+fit.nbinom<-fitdist(data.diary$LGBassNumCaught, "nbinom")
+
+plot(fit.pois)
+plot(fit.nbinom)
+
+```
+

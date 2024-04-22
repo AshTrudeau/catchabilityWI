@@ -260,42 +260,45 @@ Now trying the same thing, but population is measured with error
 
 yeah, adding priors improved convergence (Rhat=1)
 
+This is the binomial model with error in PE
+
 ```{r}
+
 
 cpue.q<-1.6
 cpue.beta<-0.2
 
-PE<-rgamma(1000, 25, 1)
+PE<-rpois(100, 5000)
+
+#PE<-rgamma(1000, 25, 1)
 #error<-rgamma(1000, shape=5,rate=1)
-error<-rnorm(1000,0,5)
+
+# SD of pop estimate error is 50
+error<-rnorm(100,0,50)
 PE.error<-PE+error
 
-# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
-# ln.pe<-log(PE.error)
-# 
-# sd.error<-sqrt(5)/1
-# 
-# ln.pe.sd<-sd.error/PE
+shoreLength<-rnorm(100, 1000, 200)
+
+popDensity<-PE/shoreLength
+
+popDensity.sigma<-sqrt(50^2/PE.error)
 
 
+cpue<-cpue.q*popDensity^cpue.beta+rnorm(100, mean=0, sd=0.5)
 
-cpue<-cpue.q*PE.error^cpue.beta+rnorm(1000, mean=0, sd=1)
 
-lncpue<-log(cpue.q*PE.error^cpue.beta+rnorm(1000, mean=0, sd=1))
-
-lncpue<-log(cpue.q)+PE.error
 
 alpha<-4
-beta<-c(-1)
-catchSomethingProb<-1/(1+(1/exp(alpha+beta*ln.pe)))
+beta<-c(-3)
+catchSomethingProb<-1/(1+(1/exp(alpha+beta*log(cpue))))
 
 catchNothingProb<-1-catchSomethingProb
 
-catchSomething<-rbinom(n=1000, size=1, prob=catchSomethingProb)
+catchSomething<-rbinom(n=100, size=1, prob=catchSomethingProb)
   
-
-simple.fake.data.error<-data.frame(PE=PE.error,
-                                   pe_se=error,
+# for now, every measurement has the same error
+simple.fake.data.error<-data.frame(popDensity=popDensity,
+                                   pe_se=rep(50, 100),
                                    cpue=cpue,
                                    catchSomething=catchSomething)
 simple.fake.data.error$cpue=ifelse(catchSomething==0, 0, simple.fake.data.error$cpue)
@@ -308,9 +311,9 @@ simple.fake.data.error$cpue=ifelse(catchSomething==0, 0, simple.fake.data.error$
 # 'PE' is the estimate of the population with error
 # 'SE_pe' is the standard error of the PE
 
-fake.df.error<-list(N=length(simple.fake.data.error$PE),
-                    PE=simple.fake.data.error$PE,
-                    se_pe=rep(10, 1000),
+fake.df.error<-list(N=length(simple.fake.data.error$popDensity),
+                    popDensity=simple.fake.data.error$popDensity,
+                    se_pe=simple.fake.data.error$pe_se,
                     catchSomething=simple.fake.data.error$catchSomething)
 
 
@@ -350,21 +353,52 @@ Chains end up in the right place, but don't quite converge, and lots of divergen
 
 
   pe_mu and pe_sigma had big convergence issues
-  
+
+this is the log linear model with error in PE  
   
 ```{r}
+cpue.q<-1.6
+cpue.beta<-0.2
+
+# simplifying my PE and pop density simulation; seems to be causing the problems
+
+#PE<-rpois(100, 5000)
 
 
-simple.fake.data.no0<-data.frame(lnPE=log(PE),
-                                   cpue=cpue)
+# SD of pop estimate error is 50
+# keeping same error sd for each observation for now
+#error<-rnorm(100,0,50)
+#PE.error<-PE+error
 
-linear.data<-list(N=length(simple.fake.data.no0$lnPE),
-                  lnPE=simple.fake.data.no0$lnPE,
-                  cpue=simple.fake.data.no0$cpue)
+#shoreLength<-rnorm(100, 1000, 200)
+
+#popDensity<-PE/shoreLength
+
+#popDensity.sigma<-sqrt(50^2/PE.error)
+
+popDensity<-rgamma(100, 7,1)
+
+meas_error<-rnorm(100, mean=0, sd=1)
+
+popDensity_error<-popDensity+meas_error
+
+cpue<-cpue.q*popDensity_error^cpue.beta+rnorm(100, mean=0, sd=0.5)
+
+simple.fake.data.error.no0<-data.frame(popDensity=popDensity_error,
+                                   pe_se=rep(1, 100),
+                                   cpue=cpue,
+                                   shoreLength=shoreLength)
+
+
+linear.data<-list(N=length(simple.fake.data.error.no0$popDensity),
+                  popDensity=popDensity_error,
+                  pe_sd=rep(1, 100),
+                  cpue=simple.fake.data.error.no0$cpue)
+                  #shoreLength=shoreLength)
 
 
 fit.linear<-stan(
-  file="fake.log.linear.stan",
+  file="fake.log.linear.error.stan",
   data=linear.data,
   chains=4, 
   warmup=1000, 
@@ -372,88 +406,79 @@ fit.linear<-stan(
   cores=4, 
   refresh=0
 )
-summary(fit.linear)
+summary<-summary(fit.linear)
 
-print(fit.linear, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9))
+print(fit.linear, pars=c("cpue_q", "beta", "epsilon", "lp__"), probs=c(.1,.5,.9))
 
-traceplot(fit.linear, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2)
+traceplot(fit.linear, pars=c("cpue_q","beta","epsilon","lp__"), inc_warmup=FALSE, nrow=2)
 
-df_draws<-as.data.frame(fit.binom)
-
-
+df_draws<-as.data.frame(fit.linear)
 
 
+
+sampler_params<-get_sampler_params(fit.linear, inc_warmup=T)
+summary(do.call(rbind, sampler_params),digits=2)
+
+lapply(sampler_params, summary, digits=2)
 ```
-  That worked great; now linear with error in PE
-  
-PE<-rgamma(1000, 25, 1)
-error<-rgamma(1000, shape=5,rate=1)
-
-PE.error<-PE+error
-
-# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
-ln.pe<-log(PE.error)
-
-sd.error<-sqrt(5)/1
-
-ln.pe.sd<-sd.error/PE
+This runs, but has problems with divergent transitions and chain mixing. I also fudged the popDensity uncertainty a little bit because I couldn't get a lognormal distribution running.
 
 
 
 
-  
-```{r}
-cpue.q<-1.6
-cpue.beta<-0.2
 
-#PE<-rgamma(100, 25, 1)
-PE<-rnorm(100, 1200, 500)
+<!-- ```{r} -->
+<!-- cpue.q<-1.6 -->
+<!-- cpue.beta<-0.2 -->
 
-sd.error<-runif(100, 0,2)
+<!-- #PE<-rgamma(100, 25, 1) -->
+<!-- PE<-rnorm(100, 1200, 500) -->
 
-error<-rnorm(100, 0, sd.error)
+<!-- sd.error<-runif(100, 0,2) -->
 
-PE.error<-PE+error
+<!-- error<-rnorm(100, 0, sd.error) -->
 
-# propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/
-#ln.pe<-log(PE.error)
+<!-- PE.error<-PE+error -->
 
-# I think this was the problem; it should have had a multiplicative error term
-#cpue<-cpue.q*(PE.error^cpue.beta)*rlnorm(100, meanlog=0, sdlog=1)
+<!-- # propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/ -->
+<!-- #ln.pe<-log(PE.error) -->
 
- lncpue<-log(cpue.q)+cpue.beta*log(PE.error)+rnorm(100, 0, 1)
- cpue<-exp(lncpue)
+<!-- # I think this was the problem; it should have had a multiplicative error term -->
+<!-- #cpue<-cpue.q*(PE.error^cpue.beta)*rlnorm(100, meanlog=0, sdlog=1) -->
 
-simple.fake.data.no0.error<-data.frame(PE=PE.error,
-                                       #pe_sd=sd.error,
-                                       cpue=cpue)
+<!--  lncpue<-log(cpue.q)+cpue.beta*log(PE.error)+rnorm(100, 0, 1) -->
+<!--  cpue<-exp(lncpue) -->
 
-linear.error.data<-list(N=length(simple.fake.data.no0.error$PE),
-                        pe_sd=sd.error,
-                  PE=simple.fake.data.no0.error$PE,
-                  cpue=simple.fake.data.no0.error$cpue)
-# if initialization fails, constrain the priors
+<!-- simple.fake.data.no0.error<-data.frame(PE=PE.error, -->
+<!--                                        #pe_sd=sd.error, -->
+<!--                                        cpue=cpue) -->
 
-fit.linear.error<-stan(
-  file="fake.log.linear.error.stan",
-  data=linear.error.data,
-  chains=4, 
-  warmup=1000, 
-  iter=2000,
-  cores=4, 
-  refresh=0
-)
+<!-- linear.error.data<-list(N=length(simple.fake.data.no0.error$PE), -->
+<!--                         pe_sd=sd.error, -->
+<!--                   PE=simple.fake.data.no0.error$PE, -->
+<!--                   cpue=simple.fake.data.no0.error$cpue) -->
+<!-- # if initialization fails, constrain the priors -->
 
-summary(fit.linear.error)
+<!-- fit.linear.error<-stan( -->
+<!--   file="fake.log.linear.error.stan", -->
+<!--   data=linear.error.data, -->
+<!--   chains=4,  -->
+<!--   warmup=1000,  -->
+<!--   iter=2000, -->
+<!--   cores=4,  -->
+<!--   refresh=0 -->
+<!-- ) -->
 
-print(fit.linear.error, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9))
+<!-- summary(fit.linear.error) -->
 
-traceplot(fit.linear.error, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2)
+<!-- print(fit.linear.error, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9)) -->
 
-df_draws<-as.data.frame(fit.binom)
+<!-- traceplot(fit.linear.error, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2) -->
+
+<!-- df_draws<-as.data.frame(fit.binom) -->
 
 
-```
+<!-- ``` -->
   
   ok let's try a simpler example
   I got this to work with observation-specific error terms

@@ -15,7 +15,7 @@
   //measurement error (in terms of PE)
 data {
   int<lower=0> N;
-  vector<lower=0>[N] PE; // measurement of pop
+  vector<lower=0>[N] popDensity; // measurement of pop
   vector<lower=0>[N] se_pe;  // measurement noise of each PE   
   array[N] int<lower=0, upper=1> catchSomething;
 }
@@ -25,7 +25,7 @@ data {
 parameters {
   real alpha;
   real beta;
-  vector<lower=0>[N] pop;   // unknown true values
+  vector<lower=0>[N] true_pop;   // unknown true values
   vector<lower=0>[N] pop_mu;             // priors for true value location
   vector<lower=0>[N] pop_sigma;          // scale for true value location
 
@@ -36,23 +36,25 @@ model {
   // I don't think this is quite right since neither population or PE are really normal
   // Switch to gamma distribution?
   // MOM from here https://math.stackexchange.com/questions/3104688/method-of-moments-with-a-gamma-distribution
-  pop~gamma(pop_mu^2/pop_sigma^2, pop_sigma^2/pop_mu); // prior
+  true_pop~normal(pop_mu, pop_sigma); // prior
  // remember that PE is population density, not an integer. 
-  PE~gamma(pop^2/se_pe^2, se_pe^2/pop); // measurement model
+  popDensity~normal(true_pop, se_pe); // measurement model
   
   // propogate 'true' population SD
-  vector[N] logPE;
-  logPE=log(PE);
-  logPE~normal(log(pop), log(se_pe)/pop); //log transforming PE. 
+  //vector[N] logPE;
+  //logPopDensity=log(popDensity);
+  //logPopDensity~normal(log(pop), log(se_pe)/pop); //log transforming PE. 
     // Jacobian adjustment for transformation
-  target += -logPE;
+  //target += -logPE;
   
-  alpha~normal(0, 3);
-  beta~normal(0,3);
-  catchSomething ~ bernoulli_logit(alpha+beta*to_vector(log(PE)));
-  se_pe~uniform(0,10);
-  pop_mu~gamma(10,1);
-  pop_sigma~uniform(0, 10);
+    catchSomething ~ bernoulli_logit(alpha+beta*to_vector(log(popDensity)));
+
+  
+  alpha~normal(0, 10);
+  beta~normal(0,10);
+  se_pe~cauchy(0,5);
+  pop_mu~normal(500,200);
+  pop_sigma~cauchy(0, 5);
   
 }
 

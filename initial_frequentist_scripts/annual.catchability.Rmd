@@ -1,0 +1,52 @@
+---
+title: "annual catchability"
+output: html_document
+date: "2024-03-18"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, wdnr.fmdb, wdnr.gis, lubridate, here, lme4)
+
+```
+
+Read in data from dataVis step
+```{r}
+data<-read_csv(here::here("data","pe.cpue.walleye.csv"))
+```
+Starting with very simple model fit--linearized catch equation for all annual estimates, no lake effect yet
+
+```{r}
+data.mod<-data%>%
+  dplyr::select(year:wye.pop.density)%>%
+  mutate(ln.pop.dens=log(wye.pop.density),
+         ln.catch.rate=log(spp.catch.rate+0.01))%>%
+  filter(!is.na(wye.pop.density))
+
+
+ggplot(data.mod)+
+  geom_point(aes(x=ln.pop.dens, y=ln.catch.rate, color=wae.code))
+```
+```{r}
+mod.1<-lm(ln.pop.dens~ln.catch.rate, data=data.mod)
+plot(mod.1)
+summary(mod.1)
+```
+
+ln q here is 1.77, beta is 0.535. Note that population estimate is population density (per ha or acre?)
+
+```{r}
+exp(1.77)
+```
+Can I add lake intercepts?
+
+```{r}
+mod.2<-lmer(ln.pop.dens~ln.catch.rate + (1|wbic), data=data.mod)
+plot(mod.2)
+summary(mod.2)
+```
+
+I may be able to do something cool with fishscapes experimental angling data--known, repeated anglers, PEs for LMB available
+
+rTMB info https://kaskr.r-universe.dev/articles/RTMB/RTMB-introduction.html 
+https://kaskr.r-universe.dev/RTMB 
