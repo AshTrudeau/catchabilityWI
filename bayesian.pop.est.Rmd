@@ -1,0 +1,111 @@
+---
+title: "bayesian pop est"
+output: html_document
+date: "2024-04-24"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan)
+
+```
+
+Can I produce PEs for fishscapes lakes using Bayesian methods?
+
+```{r}
+wd<-getwd()
+db.dir<-paste0(wd, "/MFEdb/")
+db<-"MFEdb_20220405.db"
+
+dbTableList(db.dir, db)
+
+fish_samples<-dbTable("fish_samples", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(useSampleMarkRecap=="yes")
+
+# ok, we want to do projects 37 and 38 separately. 37 used AF (anal fin) tags, 38 used PIT tags
+fish_info<-dbTable("fish_info", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(sampleID%in%fish_samples$sampleID)%>%
+  filter(otu=="largemouth_bass")
+
+fish_data<-inner_join(fish_samples, fish_info, by="sampleID")%>%
+  mutate(lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         clipRecapture=as.numeric(clipRecapture),
+         clipRecapture=ifelse(is.na(clipRecapture),0,clipRecapture),
+         tagged=ifelse(clipApply=="AF", 1, 0))
+
+samples<-unique(fish_data$sampleID)
+
+```
+
+```{r}
+# Johnson lake specifically
+
+johnson<-fish_data%>%
+  filter(lakeID=="JS")
+
+JS_samples<-data.frame(sampleID=unique(johnson$sampleID))%>%
+  mutate(method=str_split_fixed(sampleID, "_", 6)[,5],
+         sampleDate=str_split_fixed(sampleID, "_", 4)[,3],
+         sampleTime=str_split_fixed(sampleID, "_", 5)[,4],
+         date_time=ymd_hm(paste(sampleDate, sampleTime, sep="_")),
+         # adjust sampleDates for night electrofishing--if method==BE and sampleTime is in the evening before midnight, add one day to date.
+         adjust=ifelse(method=="BE" & sampleTime<2359 & sampleTime>1200, 1, 0),
+         adj_sampleDate=as.character(ymd(sampleDate)+days(1)),
+         batchDate=ifelse(adjust==1, adj_sampleDate, as.character(ymd(sampleDate))),
+         batchDate_method=paste(batchDate, method, sep="_"))
+
+johnson_pe<-left_join(johnson, JS_samples[,c("sampleID","batchDate_method")], by="sampleID")
+
+pe_data<-johnson_pe%>%
+  group_by(batchDate_method)%>%
+  summarize(markedNow=sum(tagged, na.rm=T),
+            recapturedNow=sum(clipRecapture))%>%
+  mutate(marked_cum=cumsum(markedNow),
+         markedPrior=lag(marked_cum),
+         markedPrior=ifelse(is.na(markedPrior), 0, markedPrior),
+         allFishCaught=markedNow+recapturedNow)
+
+source("schnabel.R")
+
+JS_pe<-schnabel(markedPrior=pe_data$markedPrior, collectedNow=pe_data$allFishCaught, recapturedNow=pe_data$recapturedNow)
+
+ggplot(JS_pe)+
+  geom_point(aes(x=event, y=nHat))+
+  geom_errorbar(aes(x=event, ymin=nHatLow, ymax=nHatHigh))
+
+```
+Now let's try an estimate (for just Johnson) using Stan
+
+```{r}
+pe_data_list<-list(T=nrow(pe_data),
+                   Ct=pe_data$allFishCaught,
+                   Mt=pe_data$markedPrior,
+                   Rt=pe_data$recapturedNow,
+                   sumR2=sum(pe_data$recapturedNow))
+
+pe_fit<-stan(
+  file="pop_estimate_test.stan",
+  data=pe_data_list,
+  chains=4,
+  warmup=1000,
+  iter=2000,
+  cores=4,
+  refresh=0
+)
+```
+
+fit1 <- stan(
+  file = "schools.stan",  # Stan program
+  data = schools_data,    # named list of data
+  chains = 4,             # number of Markov chains
+  warmup = 1000,          # number of warmup iterations per chain
+  iter = 2000,            # total number of iterations per chain
+  cores = 1,              # number of cores (could use one per chain)
+  refresh = 0             # no progress shown
+  )
+
+print(fit1, pars=c("theta", "mu", "tau", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(fit1, pars=c("mu","tau"), inc_warmup=TRUE, nrow=2)

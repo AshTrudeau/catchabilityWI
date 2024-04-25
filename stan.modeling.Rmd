@@ -202,28 +202,56 @@ catch.fun<-function(anglerInt.catch, ln.pop, catchSomething, beta=0.48){
 
 ```{r}
 # population density and cpue + some random error
-cpue.q<-1.6
-cpue.beta<-0.2
-
+# cpue.q<-1.6
+# cpue.beta<-0.2
+# 
 PE<-rgamma(250, 25, 1)
+effort<-rep(4, 250)
 ln.pe<-log(PE)
 
-cpue<-cpue.q*PE^cpue.beta+rnorm(250, mean=0, sd=1)
+error<-rnorm(100,0,5)
+PE.error<-PE+error
 
-alpha<-4
-beta<-c(-1)
-catchSomethingProb<-1/(1+(1/exp(alpha+beta*ln.pe)))
+#cpue<-cpue.q*PE^cpue.beta+rnorm(250, mean=0, sd=1)
 
-catchNothingProb<-1-catchSomethingProb
+catch.q<-0.2
+catch.beta<-0.2
 
-catchSomething<-rbinom(n=250, size=1, prob=catchSomethingProb)
+catch<-effort*catch.q*PE.error^catch.beta*rlnorm(250, 0, 0.1)
+
+# alpha<-4
+# beta<-c(-1)
+# catchSomethingProb<-1/(1+(1/exp(alpha+beta*ln.pe)))
+# 
+# catchNothingProb<-1-catchSomethingProb
+# 
+# catchSomething<-rbinom(n=250, size=1, prob=catchSomethingProb)
   
 
-simple.fake.data<-data.frame(PE=PE,
-                             ln.pe=ln.pe,
-                             cpue=cpue,
-                             catchSomething=catchSomething)
-simple.fake.data$cpue=ifelse(catchSomething==0, 0, simple.fake.data$cpue)
+# simple.fake.data<-data.frame(PE=PE,
+#                              ln.pe=ln.pe,
+#                              cpue=cpue,
+#                              catchSomething=catchSomething)
+
+simple.fake.data<-list(popDensity=PE.error,
+                             fcatch=catch,
+                             effort=effort,
+                             pe_sd=rep(5, length(PE.error)),
+                             N=length(PE.error))
+
+
+fit.linear<-stan(
+  file="fake.log.linear.error.catch.stan",
+  data=simple.fake.data,
+  chains=4, 
+  warmup=1000, 
+  iter=2000,
+  cores=4, 
+  refresh=0
+)
+
+
+#simple.fake.data$cpue=ifelse(catchSomething==0, 0, simple.fake.data$cpue)
 
 # df.binom<-list(lnPop=as.vector(log(fake.df$pop)),
 #                catchSomething=fake.df$catchSomething,
@@ -426,108 +454,3 @@ This runs, but has problems with divergent transitions and chain mixing. I also 
 
 
 
-
-<!-- ```{r} -->
-<!-- cpue.q<-1.6 -->
-<!-- cpue.beta<-0.2 -->
-
-<!-- #PE<-rgamma(100, 25, 1) -->
-<!-- PE<-rnorm(100, 1200, 500) -->
-
-<!-- sd.error<-runif(100, 0,2) -->
-
-<!-- error<-rnorm(100, 0, sd.error) -->
-
-<!-- PE.error<-PE+error -->
-
-<!-- # propogating error through natural log https://openbooks.library.umass.edu/p132-lab-manual/chapter/uncertainty-for-natural-logarithms/ -->
-<!-- #ln.pe<-log(PE.error) -->
-
-<!-- # I think this was the problem; it should have had a multiplicative error term -->
-<!-- #cpue<-cpue.q*(PE.error^cpue.beta)*rlnorm(100, meanlog=0, sdlog=1) -->
-
-<!--  lncpue<-log(cpue.q)+cpue.beta*log(PE.error)+rnorm(100, 0, 1) -->
-<!--  cpue<-exp(lncpue) -->
-
-<!-- simple.fake.data.no0.error<-data.frame(PE=PE.error, -->
-<!--                                        #pe_sd=sd.error, -->
-<!--                                        cpue=cpue) -->
-
-<!-- linear.error.data<-list(N=length(simple.fake.data.no0.error$PE), -->
-<!--                         pe_sd=sd.error, -->
-<!--                   PE=simple.fake.data.no0.error$PE, -->
-<!--                   cpue=simple.fake.data.no0.error$cpue) -->
-<!-- # if initialization fails, constrain the priors -->
-
-<!-- fit.linear.error<-stan( -->
-<!--   file="fake.log.linear.error.stan", -->
-<!--   data=linear.error.data, -->
-<!--   chains=4,  -->
-<!--   warmup=1000,  -->
-<!--   iter=2000, -->
-<!--   cores=4,  -->
-<!--   refresh=0 -->
-<!-- ) -->
-
-<!-- summary(fit.linear.error) -->
-
-<!-- print(fit.linear.error, pars=c("lnq", "beta", "lp__"), probs=c(.1,.5,.9)) -->
-
-<!-- traceplot(fit.linear.error, pars=c("lnq","beta"), inc_warmup=FALSE, nrow=2) -->
-
-<!-- df_draws<-as.data.frame(fit.binom) -->
-
-
-<!-- ``` -->
-  
-  ok let's try a simpler example
-  I got this to work with observation-specific error terms
-  
-  Now I'm going to start slowly transforming it into the cpue model to see where it goes wrong
-  
-```{r}
-alpha<-0.2
-beta<-5
-
-N<-100
-
-#true_x<-rnorm(100, mean=25, sd=10)
-#true_x<-rgamma(100, 25, 1)
-# true x alpha  is 25,  beta is 1
-true_x<-rlnorm(100, 0,1)
-
-sd_meas<-runif(100, 0, 0.1)
-# multiplicative error term for gamma distribution?
-x_meas<-true_x*rlnorm(100, 0, sd_meas)
-
-y<-x_meas*beta+alpha+rnorm(100, 0, 5)
-
-simpler.data<-list(N=N,
-                   true_x=true_x,
-                   x_meas=x_meas,
-                   sd_meas=sd_meas,
-                   y=y)
-
-fit.simple.error<-stan(
-  file="simpler.error.lm.stan",
-  data=simpler.data,
-  chains=1, 
-  warmup=1000, 
-  iter=2000,
-  cores=1, 
-  refresh=0
-)
-
-summary(fit.simple.error)
-
-print(fit.simple.error, pars=c("alpha", "beta", "lp__"), probs=c(.1,.5,.9))
-
-traceplot(fit.simple.error, pars=c("alpha","beta"), inc_warmup=FALSE, nrow=2)
-
-df_draws<-as.data.frame(fit.simple.error)
-
-
-
-```
-  
-  
