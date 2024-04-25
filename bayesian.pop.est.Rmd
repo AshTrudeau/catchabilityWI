@@ -110,10 +110,72 @@ pe_fit<-stan(
 
 print(pe_fit, pars=c("PE", "lp__"), probs=c(.1,.5,.9))
 
-traceplot(pe_fit, pars=c("PE","lp__"), inc_warmup=TRUE, nrow=2)
+traceplot(pe_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
 
 ```
 
 Problem is actually my model, probably. 
 Here's an explanation of mark recap models in Stan https://mc-stan.org/docs/2_22/stan-users-guide/mark-recapture-models.html 
 
+
+putting together data for multilake PEs
+
+```{r}
+# this step is necessary to identify batches. some batches are split between dates because they happened overnight. Date is therefore not a good indicator of batch.
+fish_samples<-data.frame(sampleID=unique(fish_data$sampleID))%>%
+  mutate(method=str_split_fixed(sampleID, "_", 6)[,5],
+         sampleDate=str_split_fixed(sampleID, "_", 4)[,3],
+         sampleTime=str_split_fixed(sampleID, "_", 5)[,4],
+         date_time=ymd_hm(paste(sampleDate, sampleTime, sep="_")),
+         # adjust sampleDates for night electrofishing--if method==BE and sampleTime is in the evening before midnight, add one day to date.
+         adjust=ifelse(method=="BE" & sampleTime<2359 & sampleTime>1200, 1, 0),
+         adj_sampleDate=as.character(ymd(sampleDate)+days(1)),
+         batchDate=ifelse(adjust==1, adj_sampleDate, as.character(ymd(sampleDate))),
+         batchDate_method=paste(batchDate, method, sep="_"))
+
+fish_pe<-left_join(fish_data, fish_samples[,c("sampleID","batchDate_method")], by="sampleID")%>%
+  group_by(lakeID, batchDate_method)%>%
+  summarize(markedNow=sum(tagged, na.rm=T),
+            recapturedNow=sum(clipRecapture))%>%
+  mutate(marked_cum=cumsum(markedNow),
+         markedPrior=lag(marked_cum),
+         markedPrior=ifelse(is.na(markedPrior), 0, markedPrior),
+         allFishCaught=markedNow+recapturedNow)%>%
+  ungroup()
+
+# let's filter to lakes that had at least 1 recapture
+
+recap_count<-fish_pe%>%
+  group_by(lakeID)%>%
+  summarize(nRecap=sum(recapturedNow))%>%
+  arrange(desc(nRecap))%>%
+  filter(nRecap>0)
+
+
+fish_pe_recap<-fish_pe%>%
+  filter(lakeID%in%recap_count$lakeID)%>%
+  mutate(CtMt=allFishCaught*markedPrior)%>%
+  group_by(lakeID)%>%
+  summarize(sumCtMt=sum(CtMt),
+            sumRt=sum(recapturedNow))
+
+```
+
+I want no pooling in this PE model'
+
+Make list and fit
+```{r}
+pe_data_all<-list(L=nrow(fish_pe_recap),
+                  sumCtMt=fish_pe_recap$sumCtMt,
+                  sumRt=fish_pe_recap$sumRt)
+
+pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
+                 data=pe_data_all,
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0
+)
+```
+eight schools example here https://astrostatistics.psu.edu/su14/lectures/Daniel-Lee-Stan-2.pdf 
