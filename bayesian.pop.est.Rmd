@@ -6,7 +6,7 @@ date: "2024-04-24"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan)
+pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan, RSQLite, MFEUtilities)
 
 ```
 
@@ -82,30 +82,25 @@ Now let's try an estimate (for just Johnson) using Stan
 pe_data_list<-list(T=nrow(pe_data),
                    Ct=pe_data$allFishCaught,
                    Mt=pe_data$markedPrior,
-                   Rt=pe_data$recapturedNow,
-                   sumR2=sum(pe_data$recapturedNow))
+                  # Rt=pe_data$recapturedNow)
+                   sumRt=sum(pe_data$recapturedNow))
+
+# only giving final counts
+pe_data_list<-list(C=sum(pe_data$allFishCaught),
+                   M=pe_data$markedPrior[nrow(pe_data)],
+                   sumRt=sum(pe_data$recapturedNow))
 
 pe_fit<-stan(
-  file="pop_estimate_test.stan",
+  file="pop_estimate_poisson.stan",
   data=pe_data_list,
-  chains=4,
+  chains=1,
   warmup=1000,
   iter=2000,
-  cores=4,
+  cores=1,
   refresh=0
 )
 ```
 
-fit1 <- stan(
-  file = "schools.stan",  # Stan program
-  data = schools_data,    # named list of data
-  chains = 4,             # number of Markov chains
-  warmup = 1000,          # number of warmup iterations per chain
-  iter = 2000,            # total number of iterations per chain
-  cores = 1,              # number of cores (could use one per chain)
-  refresh = 0             # no progress shown
-  )
+Problem is actually my model, probably. 
+Here's an explanation of mark recap models in Stan https://mc-stan.org/docs/2_22/stan-users-guide/mark-recapture-models.html 
 
-print(fit1, pars=c("theta", "mu", "tau", "lp__"), probs=c(.1,.5,.9))
-
-traceplot(fit1, pars=c("mu","tau"), inc_warmup=TRUE, nrow=2)
