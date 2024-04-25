@@ -6,13 +6,11 @@
 // The input data is a vector 'y' of length 'N'.
 data {
   // number of samples
-  int<lower=0> T;
-  // vector of catch in each sample t
-  //vector[T] Ct;
+  //int<lower=0> T;
   // vector of marks at large prior to each sample t
-  vector[T] Mt;
+  int<lower=1> M;
   // recaps at each sampling event t
-  vector[T] Rt;
+  int<lower=M> sumRt;
   
   //int<lower=0> sumRt;
 }
@@ -23,17 +21,17 @@ parameters {
   
   // make bounds more specific (based on Mt Rt values)
  // real<lower=0> PE;
-  real<lower=0> nUnmarked;
+  int<lower=0> nUnmarked;
 }
 
 // The model to be estimated. 
 model {
-  sum(Rt)~hypergeometric(nUnmarked+sum(Mt), Mt[T], nUnmarked);
+  sumRt~hypergeometric(nUnmarked+M, M, nUnmarked);
   
  // PE=nUnmarked[T]+sum(Mt);
   
   // this is very specific and maybe wrong?
-  nUnmarked~gamma(0.1,0.1);
+  nUnmarked~poisson(10);
   
 
 

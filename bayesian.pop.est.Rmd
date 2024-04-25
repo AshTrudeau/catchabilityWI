@@ -79,11 +79,11 @@ ggplot(JS_pe)+
 Now let's try an estimate (for just Johnson) using Stan
 
 ```{r}
-pe_data_list<-list(T=nrow(pe_data),
-                   Ct=pe_data$allFishCaught,
-                   Mt=pe_data$markedPrior,
-                  # Rt=pe_data$recapturedNow)
-                   sumRt=sum(pe_data$recapturedNow))
+# pe_data_list<-list(T=nrow(pe_data),
+#                    Ct=pe_data$allFishCaught,
+#                    Mt=pe_data$markedPrior,
+#                   # Rt=pe_data$recapturedNow)
+#                    sumRt=sum(pe_data$recapturedNow))
 
 # only giving final counts
 pe_data_list<-list(C=sum(pe_data$allFishCaught),
@@ -93,12 +93,18 @@ pe_data_list<-list(C=sum(pe_data$allFishCaught),
 pe_fit<-stan(
   file="pop_estimate_poisson.stan",
   data=pe_data_list,
-  chains=1,
+  chains=4,
   warmup=1000,
   iter=2000,
-  cores=1,
+  cores=4,
   refresh=0
 )
+
+
+print(pe_fit, pars=c("PE", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(pe_fit, pars=c("PE","lp__"), inc_warmup=TRUE, nrow=2)
+
 ```
 
 Problem is actually my model, probably. 

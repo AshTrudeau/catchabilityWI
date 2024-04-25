@@ -5,33 +5,26 @@
 // The input data is a vector 'y' of length 'N'.
 data {
   // number of samples
-  int<lower=1> T;
-  // vector of catch in each sample t
-  vector[T] Ct;
+  int<lower=1> C;
   // vector of marks at large prior to each sample t
-  vector[T] Mt;
+  int<lower=1> M;
   // recaps at each sampling event t
-  //vector[T] Rt;
-  
+
   int<lower=0> sumRt;
 }
 
 // The parameters accepted by the model. 
 parameters {
   // left off here
-  real<lower=(1/Mt[T])> inv_PE;
- // real<lower=0> PE_a;
-  //real<lower=0> PE_b;
+  real<lower=(M)> PE;
 }
 
 // The model to be estimated. 
 model {
-  sumRt~poisson((Ct .* Mt) .* inv_PE);
+  sumRt~poisson((C*M)/PE);
 
-  inv_PE~gamma(0.001, 0.001);
+  PE~gamma(0.001, 0.001);
   
-//  PE_a~cauchy(0,5);
-//  PE_b~cauchy(0,5);
-  
+
 }
 
