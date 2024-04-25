@@ -41,6 +41,7 @@ samples<-unique(fish_data$sampleID)
 
 ```{r}
 # Johnson lake specifically
+# arrowhead next
 
 johnson<-fish_data%>%
   filter(lakeID=="JS")
@@ -86,9 +87,15 @@ Now let's try an estimate (for just Johnson) using Stan
 #                    sumRt=sum(pe_data$recapturedNow))
 
 # only giving final counts
-pe_data_list<-list(C=sum(pe_data$allFishCaught),
-                   M=pe_data$markedPrior[nrow(pe_data)],
-                   sumRt=sum(pe_data$recapturedNow))
+# pe_data_list<-list(C=sum(pe_data$allFishCaught),
+#                    M=pe_data$markedPrior[nrow(pe_data)],
+#                    sumRt=sum(pe_data$recapturedNow))
+
+# found the problem; need to multiply C*M then sum all of them, duh
+
+pe_data_list<-list(T=nrow(pe_data),
+                  CtMt=pe_data$allFishCaught*pe_data$markedPrior,
+                  Rt=pe_data$recapturedNow)
 
 pe_fit<-stan(
   file="pop_estimate_poisson.stan",
