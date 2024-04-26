@@ -179,3 +179,4 @@ pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
 )
 ```
 eight schools example here https://astrostatistics.psu.edu/su14/lectures/Daniel-Lee-Stan-2.pdf 
+I don't understand why I"m getting the ill typed argument error when I've 
