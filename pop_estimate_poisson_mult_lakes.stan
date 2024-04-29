@@ -5,37 +5,26 @@
 data {
   // total number of lakes
   int<lower=1> L;
-
-  // array (because integer) of catch at sampling event t * marks at large at
-  //time t
   // data now has one row per lake instead of one row per sampling event--
   //condensed into sum CtMt and sumRt
-  array[L] int sumCtMt;
+  vector[L] sumCtMt;
   // recaps at each sampling event t
-  array[L] int sumRt;
-  
+ // vector[L] sumRt;
+ // array[L] int sumRt;
+ int sumRt[L];
 }
+
 
 parameters {
   // I want one estimate of PE for each lake L
-  // where I'm stuck: How do I index lakes with multiple observations? 
-  //Maybe just calculate it first--one row per lake with sum(CtMt), sum(Rt)
-  // int parameters not allowed 
-  real<lower=sumRt[L]> PE[L];
+  vector<lower=0>[L]  PE;
+
 }
 
 // The model to be estimated. 
 model {
-  // both of these versions (looped and vectorized) get same 'ill-typed arguments' error
-  
-// for(i in 1:L){
-//    PE[L]~gamma(0.001, 0.001);
-//    sumRt[L]~poisson(to_vector(sumCtMt[L])/PE[L]);
-//  }
-    PE~gamma(0.0001, 0.0001);
-    sumRt~poisson(to_vector(sumCtMt) ./ to_vector(PE));
-    
-
+    PE~gamma(0.001, 0.001);
+    sumRt~poisson(sumCtMt ./ PE);
 
 }
 

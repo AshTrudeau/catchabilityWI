@@ -171,12 +171,17 @@ pe_data_all<-list(L=nrow(fish_pe_recap),
 
 pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
                  data=pe_data_all,
-                 chains=4,
+                 chains=1,
                  warmup=1000,
                  iter=2000,
-                 cores=4,
-                 refresh=0
-)
+                 cores=1,
+                 refresh=0)
+                 
+                 
+print(pe_all_fit, pars=c("PE", "lp__"), probs=c(.1,.5,.9))
+
+traceplot(pe_all_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
+
 ```
 eight schools example here https://astrostatistics.psu.edu/su14/lectures/Daniel-Lee-Stan-2.pdf 
 I don't understand why I"m getting the ill typed argument error when I've 
