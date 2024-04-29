@@ -9,9 +9,7 @@ data {
   //condensed into sum CtMt and sumRt
   vector[L] sumCtMt;
   // recaps at each sampling event t
- // vector[L] sumRt;
- // array[L] int sumRt;
- int sumRt[L];
+  int sumRt[L];
 }
 
 
@@ -23,7 +21,10 @@ parameters {
 
 // The model to be estimated. 
 model {
-    PE~gamma(0.001, 0.001);
+  // continuous distribution of PE because Stan can't estimate an integer param
+  // what if it's lognormal?
+    //PE~gamma(0.001, 0.001);
+    PE~lognormal(0,1);
     sumRt~poisson(sumCtMt ./ PE);
 
 }

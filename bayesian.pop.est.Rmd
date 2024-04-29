@@ -171,17 +171,79 @@ pe_data_all<-list(L=nrow(fish_pe_recap),
 
 pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
                  data=pe_data_all,
-                 chains=1,
+                 chains=4,
                  warmup=1000,
                  iter=2000,
-                 cores=1,
+                 cores=4,
                  refresh=0)
                  
                  
-print(pe_all_fit, pars=c("PE", "lp__"), probs=c(.1,.5,.9))
+print(pe_all_fit, pars=c("PE", "lp__"), probs=c(.025,.5,.975))
 
 traceplot(pe_all_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
 
+draws<-extract(pe_all_fit)
+
+pe.draws.df<-as.data.frame(draws)
+lakeID<-fish_pe_recap$lakeID
+
+names(pe.draws.df)<-c(lakeID, "likelihood")
+
+pe.draws.long.lognorm<-pe.draws.df%>%
+  dplyr::select(AR:WS)%>%
+  pivot_longer(cols=everything(), names_to="lakeID", values_to="PE")
+
+ggplot(pe.draws.long.lognorm)+
+  geom_histogram(aes(x=PE, fill=lakeID))
+
+pe.draws.long.lognorm%>%
+  group_by(lakeID)%>%
+  summarize(mean.PE=mean(PE),
+            sd.PE=sd(PE))
 ```
-eight schools example here https://astrostatistics.psu.edu/su14/lectures/Daniel-Lee-Stan-2.pdf 
-I don't understand why I"m getting the ill typed argument error when I've 
+Both gamma and lognormal dists on PE work, but they give different estimates. Place to sensitivity test
+ohhh priors matter a lot. with a less specific prior on PE, estimates spread out a lot. 
+
+Compare to gamma
+
+```{r}
+pe_data_all<-list(L=nrow(fish_pe_recap),
+                  sumCtMt=fish_pe_recap$sumCtMt,
+                  sumRt=fish_pe_recap$sumRt)
+
+pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
+                 data=pe_data_all,
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+                 
+                 
+print(pe_all_fit, pars=c("PE", "lp__"), probs=c(.025,.5,.975))
+
+traceplot(pe_all_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
+
+draws<-extract(pe_all_fit)
+
+pe.draws.df<-as.data.frame(draws)
+lakeID<-fish_pe_recap$lakeID
+
+names(pe.draws.df)<-c(lakeID, "likelihood")
+
+pe.draws.long.gamma<-pe.draws.df%>%
+  dplyr::select(AR:WS)%>%
+  pivot_longer(cols=everything(), names_to="lakeID", values_to="PE")
+
+ggplot(pe.draws.long.gamma)+
+  geom_histogram(aes(x=PE, fill=lakeID))
+
+pe.draws.long.gamma%>%
+  group_by(lakeID)%>%
+  summarize(mean.PE=mean(PE),
+            sd.PE=sd(PE))
+
+
+```
+
+The lognormal prior makes the most sense to me both theoretically and based on its PE results. Example: Lake of the Hills (LH) was very small. We also observed a HUGE largemouth bass harvested by an angler from that lake. I would not be at all surprised if the lake had a lower population abundance but larger max size for LMB. 

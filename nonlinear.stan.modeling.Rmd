@@ -1,0 +1,52 @@
+---
+title: "nonlinear stan modeling"
+output: html_document
+date: "2024-04-29"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan, truncnorm)
+```
+
+Fitting nonlinear models in Stan with fake data. 
+
+
+
+```{r}
+catch.fun<-function(effort, q, popDensity, beta, error){
+  catch=(effort*q*popDensity^beta)*error
+  return(catch)
+}
+
+# q as a truncated (at zero) normal? 
+
+fake.df<-data.frame(popDensity=rlnorm(100, meanlog=2, sdlog=0.2),
+                    effort=rlnorm(100, meanlog=1.25, sdlog=0.25),
+                    q=rtruncnorm(100, a=0, b=Inf, mean=0.5, sd=1),
+                    beta=rlnorm(100, meanlog=-1, 0.3),
+                    error=rlnorm(100, meanlog=0, sdlog=0.3))
+
+fake.df$catch<-floor(catch.fun(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta, fake.df$error))
+
+fake.data<-list(N=nrow(fake.df),
+                effort=fake.df$effort,
+                lmbCatch=fake.df$catch,
+                popDensity=fake.df$popDensity)
+```
+estimate q and beta
+```{r}
+fake_fit<-stan(file="fake.nonlinear.nb.stan",
+                 data=fake.data,
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+
+print(fake_fit, pars=c("q","beta","phi", "lp__"), probs=c(.025,.5,.975))
+
+traceplot(fake_fit, pars=c("q","beta","phi","lp__"), inc_warmup=FALSE, nrow=2)
+
+```
+
