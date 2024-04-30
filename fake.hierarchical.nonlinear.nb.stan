@@ -25,12 +25,12 @@ parameters {
   // I want different estimates of q for different anglers
   array[A] real<lower=0> q_a;
   // catch rates are generally hyperstable (so <1), but leaving some wiggle room to see if it still works
-  real<lower=0, upper=2> beta;
+  real<lower=0> beta;
   real<lower=0> phi;
   
   // hyperparameters
-  real<lower=0> mulog_q;
-  real<lower=0> sigmalog_q;
+  real<lower=0> mu_q;
+  real<lower=0> sigma_q;
 }
 
 transformed parameters{
@@ -51,10 +51,10 @@ model {
   
   lmbCatch~neg_binomial_2_log(logCatchHat, phi);
   
-  q_a~lognormal(mulog_q, sigmalog_q);
+  q_a~lognormal(mu_q, sigma_q);
   
-  mulog_q~normal(0, 10);
-  sigmalog_q~cauchy(0,5);
+  mu_q~normal(0, 1);
+  sigma_q~exponential(1);
 
   phi~gamma(0.001,0.001);
 

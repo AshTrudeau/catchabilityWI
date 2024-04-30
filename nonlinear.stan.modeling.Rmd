@@ -15,10 +15,16 @@ This is a helpful tutorial using fishery data https://www.weirdfishes.blog/blog/
 
 
 ```{r}
-catch.fun<-function(effort, q, popDensity, beta, error){
+catch.fun.err<-function(effort, q, popDensity, beta, error){
   catch=(effort*q*popDensity^beta)*error
   return(catch)
 }
+
+catch.fun<-function(effort, q, popDensity, beta){
+  catch=(effort*q*popDensity^beta)
+  return(catch)
+}
+
 
 # q as a truncated (at zero) normal? 
 
@@ -56,6 +62,16 @@ I want estimate a grand mean q and anglerID-specific q coefficients
 
 left off here trying to parse example https://mc-stan.org/docs/stan-users-guide/regression.html#hierarchical-regression 
 ```{r}
+
+fake.df<-data.frame(popDensity=rlnorm(100, meanlog=2, sdlog=0.2),
+                    effort=rlnorm(100, meanlog=1.25, sdlog=0.25),
+                    #q=rtruncnorm(100, a=0, b=Inf, mean=0.5, sd=1),
+                    q=rlnorm(100, -0.5, 0.5),
+                    beta=rlnorm(100, meanlog=-1, 0.3),
+                    error=rlnorm(100, meanlog=0, sdlog=0.3))
+
+fake.df$catch<-floor(catch.fun(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta))
+
 fake.df.rep<-fake.df%>%
   mutate(anglerID=seq(1:nrow(fake.df)))%>%
   group_by(anglerID)%>%
@@ -70,16 +86,19 @@ fake.data.hier<-list(A=max(fake.df.rep$anglerID),
                      )
 
 fake_fit_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
-                 data=fake.data,
+                 data=fake.data.hier,
+                 control=list(stepsize=1),
                  chains=4,
                  warmup=1000,
                  iter=2000,
                  cores=4,
                  refresh=0)
 
-print(fake_fit, pars=c("q","beta","phi", "lp__"), probs=c(.025,.5,.975))
+# print(fake_fit, pars=c("q","beta","phi", "lp__"), probs=c(.025,.5,.975))
+# 
+# traceplot(fake_fit, pars=c("q","beta","phi","lp__"), inc_warmup=FALSE, nrow=2)
 
-traceplot(fake_fit, pars=c("q","beta","phi","lp__"), inc_warmup=FALSE, nrow=2)
+launch_shinystan(fake_fit_hier)
 
 ```
 
