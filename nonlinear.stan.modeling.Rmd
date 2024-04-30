@@ -70,7 +70,7 @@ fake.df<-data.frame(popDensity=rlnorm(100, meanlog=2, sdlog=0.2),
                     beta=rlnorm(100, meanlog=-1, 0.3),
                     error=rlnorm(100, meanlog=0, sdlog=0.3))
 
-fake.df$catch<-floor(catch.fun(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta))
+fake.df$catch<-floor(catch.fun.err(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta, fake.df$error))
 
 fake.df.rep<-fake.df%>%
   mutate(anglerID=seq(1:nrow(fake.df)))%>%
