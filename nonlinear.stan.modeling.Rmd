@@ -11,6 +11,7 @@ pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan, truncnorm)
 
 Fitting nonlinear models in Stan with fake data. 
 
+This is a helpful tutorial using fishery data https://www.weirdfishes.blog/blog/fitting-bayesian-models-with-stan-and-r/ 
 
 
 ```{r}
@@ -50,3 +51,36 @@ traceplot(fake_fit, pars=c("q","beta","phi","lp__"), inc_warmup=FALSE, nrow=2)
 
 ```
 
+Now try to add random effects. I'll make this more trivial by just repeating rows of the fake data
+I want estimate a grand mean q and anglerID-specific q coefficients
+
+left off here trying to parse example https://mc-stan.org/docs/stan-users-guide/regression.html#hierarchical-regression 
+```{r}
+fake.df.rep<-fake.df%>%
+  mutate(anglerID=seq(1:nrow(fake.df)))%>%
+  group_by(anglerID)%>%
+  slice(rep(1:n(), each=5))
+
+fake.data.hier<-list(A=max(fake.df.rep$anglerID),
+                     N=nrow(fake.df.rep),
+                     AA=fake.df.rep$anglerID,
+                     lmbCatch=fake.df.rep$catch,
+                     effort=fake.df.rep$effort,
+                     popDensity=fake.df.rep$popDensity
+                     )
+
+fake_fit_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
+                 data=fake.data,
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+
+print(fake_fit, pars=c("q","beta","phi", "lp__"), probs=c(.025,.5,.975))
+
+traceplot(fake_fit, pars=c("q","beta","phi","lp__"), inc_warmup=FALSE, nrow=2)
+
+```
+
+Useful example in answers here of nonlinear hierarchical model https://stackoverflow.com/questions/50749414/developing-hierarchical-version-of-nonlinear-growth-curve-model-in-stan 
