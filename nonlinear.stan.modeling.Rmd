@@ -115,6 +115,7 @@ Useful example in answers here of nonlinear hierarchical model https://stackover
 fake data for more heirarchical levels, making fake data closer to the real data I'm going to analyze
 
 ```{r}
+set.seed(395)
 catch.fun.err<-function(effort, q_mu, q_d, q_a, q_l, popDensity, beta, error){
   catch=(effort*(q_mu+q_d+q_a+q_l)*popDensity^beta)*error
   return(catch)
@@ -154,7 +155,7 @@ fake.df.hier<-data.frame(D=rep(dates$D, each=6),
   left_join(dates, by="D")%>%
   left_join(anglers, by="A")%>%
   left_join(lakes, by="L")%>%
-  mutate(beta=rep(0.1),
+  mutate(beta=rep(0.25),
          q_mu=rep(0.2),
          effort=rlnorm(540, meanlog=1.25, sdlog=0.25),
          error=rlnorm(540, meanlog=0, sdlog=0.3),
@@ -174,15 +175,16 @@ fake.data.hier<-list(N=nrow(fake.df.hier),
 
 fake_fit_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
                  data=fake.data.hier,
-                 control=list(stepsize=1),
-                 chains=1,
+                 control=list(stepsize=0.1),
+                 chains=4,
                  warmup=1000,
                  iter=2000,
-                 cores=1,
+                 cores=4,
                  refresh=0)
 
+launch_shinystan(fake_fit_hier)
 
-
+pairs(fake_fit_hier, pars=c("mu_q_a","mu_q_d","mu_q_l","beta", "phi","sigma_q_a","sigma_q_d", "sigma_q_l"))
 ```
 
 this fake data has fewer zeroes than the real data will, but at least it has them.

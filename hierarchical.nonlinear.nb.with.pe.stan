@@ -22,7 +22,7 @@ data {
 
   // all observations of effort (covariate)
   array[N] real<lower=0> effort;
-  // all estimates of population density (covariate)
+  // all now replacing direct popDensity input with estimation of popDensity from mark recap
   array[N] real<lower=0> popDensity;
   
 }
@@ -31,15 +31,15 @@ data {
 // phi is inverse overdispersion param
 parameters {
   // I want different estimates of q for different anglers, dates, and lakes, as well as an overall mean q
-  // without these zero lower bounds, initialization fails
+  // I'm taking out the lower bound because it will probably cause problems with the lower q values. It's okay if they overlap zero
   array[A] real<lower=0> q_a;
   array[D] real<lower=0> q_d;
   array[L] real<lower=0> q_l;
  
-  real<lower=0> q_mu;
+  real q_mu;
 
   real beta;
-  real phi;
+  real<lower=0> phi;
   
   // hyperparameters
   real mu_q_a;
@@ -59,42 +59,36 @@ transformed parameters{
   
   for(i in 1:N){
     catchHat[i] = effort[i] .* (q_mu + q_a[AA[i]] + q_d[DD[i]] + q_l[LL[i]]) .* popDensity[i]^beta;
-
   }
   
   logCatchHat = log(catchHat);
 
 
 }
-
+// use log alternative parameterization for NB? NegBinomial2Log
 model {
   
   lmbCatch~neg_binomial_2_log(logCatchHat, phi);
   
-  // prior on logCatchHat. Not sure if I need this, but model has divergent transitions either way
-  logCatchHat~lognormal(0,1);
-  
-  // these need to be above zero
   q_mu~lognormal(0,0.5);
   q_a~lognormal(mu_q_a, sigma_q_a);
   q_d~lognormal(mu_q_d, sigma_q_d);
   q_l~lognormal(mu_q_l, sigma_q_l);
-  
-  // these need to be able to include negatives
+
   mu_q_a~normal(0,1);
   mu_q_d~normal(0,1);
   mu_q_l~normal(0,1);
   
   sigma_q_a~exponential(1);
   sigma_q_d~exponential(1);
-
   sigma_q_l~exponential(1);
   
-  // started out with gamma distribution on phi, tried switching to lognormal to better reflect simulated error
-  // resulted in more divergences for some reason? inv_gamma was recommended for log param NB, so landed on that
-  //phi~gamma(0.001,0.001);
-  //phi~lognormal(0,0.5);
-  phi~inv_gamma(0.4, 0.3);
+  //sigma_q_a~cauchy(0,5);
+  //sigma_q_d~cauchy(0,5);
+  //sigma_q_l~cauchy(0,5);
+
+  phi~gamma(0.001,0.001);
+
   beta~lognormal(0,0.5);
   
   
