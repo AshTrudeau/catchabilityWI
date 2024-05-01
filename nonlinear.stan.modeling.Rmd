@@ -102,4 +102,87 @@ launch_shinystan(fake_fit_hier)
 
 ```
 
+fake.df<-data.frame(popDensity=rlnorm(100, meanlog=2, sdlog=0.2),
+                    effort=rlnorm(100, meanlog=1.25, sdlog=0.25),
+                    #q=rtruncnorm(100, a=0, b=Inf, mean=0.5, sd=1),
+                    q=rlnorm(100, -0.5, 0.5),
+                    beta=rlnorm(100, meanlog=-1, 0.3),
+                    error=rlnorm(100, meanlog=0, sdlog=0.3))
+
+
 Useful example in answers here of nonlinear hierarchical model https://stackoverflow.com/questions/50749414/developing-hierarchical-version-of-nonlinear-growth-curve-model-in-stan 
+
+fake data for more heirarchical levels, making fake data closer to the real data I'm going to analyze
+
+```{r}
+catch.fun.err<-function(effort, q_mu, q_d, q_a, q_l, popDensity, beta, error){
+  catch=(effort*(q_mu+q_d+q_a+q_l)*popDensity^beta)*error
+  return(catch)
+}
+
+# 90 unique dates
+D<-90
+# 20 unique anglers
+A<-20
+# 10 unique lakes
+L<-10
+
+q_d<-rlnorm(D, -1, 0.5)
+q_a<-rlnorm(A, -2, 0.2)
+q_l<-rlnorm(L, -2, 0.01)
+
+q_mu<-0.2
+
+popDensity<-rlnorm(L, meanlog=2, sdlog=0.2)
+beta<-0.25
+
+# D, A, and L indexes and their q values
+dates<-data.frame(D=seq(1:D), q_d=q_d)
+anglers<-data.frame(A=seq(1:A), q_a=q_a)
+lakes<-data.frame(L=seq(1:L), q_l=q_l, popDensity=popDensity)
+
+# sample randomly with replacement from anglers and lakes for each date. then left_join approprate q values by A, D, and L selection
+
+lakeSamples<-sample(lakes$L, 180, replace=TRUE)
+anglerSamples<-sample(anglers$A, 540, replace=TRUE)
+
+
+# 2 lakes visited each day, three anglers at each lake
+fake.df.hier<-data.frame(D=rep(dates$D, each=6),
+                         L=rep(lakeSamples, each=3),
+                         A=anglerSamples)%>%
+  left_join(dates, by="D")%>%
+  left_join(anglers, by="A")%>%
+  left_join(lakes, by="L")%>%
+  mutate(beta=rep(0.1),
+         q_mu=rep(0.2),
+         effort=rlnorm(540, meanlog=1.25, sdlog=0.25),
+         error=rlnorm(540, meanlog=0, sdlog=0.3),
+         lmbCatch=floor(catch.fun.err(effort, q_mu, q_d, q_a, q_l, popDensity, beta, error)))
+
+fake.data.hier<-list(N=nrow(fake.df.hier),
+                     D=D,
+                     L=L,
+                     A=A,
+                     DD=fake.df.hier$D,
+                     LL=fake.df.hier$L,
+                     AA=fake.df.hier$A,
+                     effort=fake.df.hier$effort,
+                     popDensity=fake.df.hier$popDensity,
+                     lmbCatch=fake.df.hier$lmbCatch)
+
+
+fake_fit_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
+                 data=fake.data.hier,
+                 control=list(stepsize=1),
+                 chains=1,
+                 warmup=1000,
+                 iter=2000,
+                 cores=1,
+                 refresh=0)
+
+
+
+```
+
+this fake data has fewer zeroes than the real data will, but at least it has them.
