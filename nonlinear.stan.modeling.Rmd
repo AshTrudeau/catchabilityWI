@@ -34,7 +34,7 @@ fake.df<-data.frame(popDensity=rlnorm(100, meanlog=2, sdlog=0.2),
                     beta=rlnorm(100, meanlog=-1, 0.3),
                     error=rlnorm(100, meanlog=0, sdlog=0.3))
 
-fake.df$catch<-floor(catch.fun(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta, fake.df$error))
+fake.df$catch<-floor(catch.fun.err(fake.df$effort, fake.df$q, fake.df$popDensity, fake.df$beta, fake.df$error))
 
 fake.data<-list(N=nrow(fake.df),
                 effort=fake.df$effort,
@@ -175,7 +175,7 @@ fake.data.hier<-list(N=nrow(fake.df.hier),
 
 fake_fit_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
                  data=fake.data.hier,
-                 control=list(stepsize=0.1),
+                 control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=2000,
@@ -188,3 +188,21 @@ pairs(fake_fit_hier, pars=c("mu_q_a","mu_q_d","mu_q_l","beta", "phi","sigma_q_a"
 ```
 
 this fake data has fewer zeroes than the real data will, but at least it has them.
+
+Trying non-centered parameterization https://mc-stan.org/docs/2_18/stan-users-guide/reparameterization-section.html
+useful resource https://betanalpha.github.io/assets/case_studies/hierarchical_modeling.html 
+
+this post gets into non-centeredc lognormal https://discourse.mc-stan.org/t/centred-vs-non-centred-parametrisation-with-lognormal-likelihood/13976/13 
+
+```{r}
+fake_fit_noncentered_hier<-stan(file="noncentered.hierarchical.nonlinear.nb.stan",
+                 data=fake.data.hier,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=1,
+                 warmup=1000,
+                 iter=2000,
+                 cores=1,
+                 refresh=0)
+
+```
+
