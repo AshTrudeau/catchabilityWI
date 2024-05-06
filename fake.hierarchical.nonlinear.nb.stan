@@ -43,26 +43,26 @@ parameters {
   
   // hyperparameters
   real mu_q_a;
-  real sigma_q_a;
+  real<lower=0> sigma_q_a;
   
   real mu_q_d;
-  real sigma_q_d;
+  real<lower=0> sigma_q_d;
   
   real mu_q_l;
-  real sigma_q_l;
+  real<lower=0> sigma_q_l;
 }
 
 transformed parameters{
 
-  vector[N] catchHat;
+  //vector[N] catchHat;
   vector[N] logCatchHat;
   
   for(i in 1:N){
-    catchHat[i] = effort[i] .* (q_mu + q_a[AA[i]] + q_d[DD[i]] + q_l[LL[i]]) .* popDensity[i]^beta;
+    logCatchHat[i] = log(effort[i] .* (q_mu + q_a[AA[i]] + q_d[DD[i]] + q_l[LL[i]]) .* popDensity[i]^beta);
 
   }
   
-  logCatchHat = log(catchHat);
+ // logCatchHat = log(catchHat);
 
 
 }
@@ -72,8 +72,7 @@ model {
   lmbCatch~neg_binomial_2_log(logCatchHat, phi);
   
   // prior on logCatchHat. Not sure if I need this, but model has divergent transitions either way
-  logCatchHat~lognormal(0,1);
-  
+
   // these need to be above zero
   q_mu~lognormal(0,0.5);
   q_a~lognormal(mu_q_a, sigma_q_a);
@@ -87,7 +86,6 @@ model {
   
   sigma_q_a~exponential(1);
   sigma_q_d~exponential(1);
-
   sigma_q_l~exponential(1);
   
   // started out with gamma distribution on phi, tried switching to lognormal to better reflect simulated error

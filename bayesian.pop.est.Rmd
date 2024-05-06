@@ -194,7 +194,7 @@ pe.draws.long.lognorm<-pe.draws.df%>%
   pivot_longer(cols=everything(), names_to="lakeID", values_to="PE")
 
 ggplot(pe.draws.long.lognorm)+
-  geom_histogram(aes(x=PE, fill=lakeID))
+  geom_histogram(aes(x=PE))
 
 pe.draws.long.lognorm%>%
   group_by(lakeID)%>%
@@ -235,14 +235,22 @@ pe.draws.long.gamma<-pe.draws.df%>%
   dplyr::select(AR:WS)%>%
   pivot_longer(cols=everything(), names_to="lakeID", values_to="PE")
 
+library(RColorBrewer)
+
+palette<-c(brewer.pal(n=12, "Paired"), "gray")
+
 ggplot(pe.draws.long.gamma)+
-  geom_histogram(aes(x=PE, fill=lakeID))
+  geom_histogram(aes(x=PE, fill=lakeID))+
+  facet_wrap(lakeID~., ncol=3)+
+  scale_fill_manual(values=palette)+
+  theme_bw()
+ggsave(here::here("figures","population.estimates.png"), height=4, width=6)
+
 
 pe.draws.long.gamma%>%
   group_by(lakeID)%>%
   summarize(mean.PE=mean(PE),
             sd.PE=sd(PE))
-
 
 ```
 
