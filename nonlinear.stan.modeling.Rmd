@@ -161,6 +161,7 @@ fake.df.hier<-data.frame(D=rep(dates$D, each=6),
          error=rlnorm(540, meanlog=0, sdlog=0.3),
          lmbCatch=floor(catch.fun.err(effort, q_mu, q_d, q_a, q_l, popDensity, beta, error)))
 
+
 fake.data.hier<-list(N=nrow(fake.df.hier),
                      D=D,
                      L=L,
@@ -168,13 +169,14 @@ fake.data.hier<-list(N=nrow(fake.df.hier),
                      DD=fake.df.hier$D,
                      LL=fake.df.hier$L,
                      AA=fake.df.hier$A,
-                     log_effort=log(fake.df.hier$effort),
-                     log_popDensity=log(fake.df.hier$popDensity),
+                     effort=fake.df.hier$effort,
+                     popDensity=fake.df.hier$popDensity,
                      lmbCatch=fake.df.hier$lmbCatch)
 
 
 fake_fit_hier<-stan(file="noncentered.hierarchical.nonlinear.nb.stan",
                  data=fake.data.hier,
+                 init=hier.inits,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=1,
                  warmup=1000,
@@ -195,15 +197,91 @@ useful resource https://betanalpha.github.io/assets/case_studies/hierarchical_mo
 this post gets into non-centeredc lognormal https://discourse.mc-stan.org/t/centred-vs-non-centred-parametrisation-with-lognormal-likelihood/13976/13 
 
 ```{r}
-fake_fit_noncentered_hier<-stan(file="noncentered.hierarchical.nonlinear.nb.stan",
+
+fake.data.hier<-list(N=nrow(fake.df.hier),
+                     D=D,
+                     L=L,
+                     A=A,
+                     DD=fake.df.hier$D,
+                     LL=fake.df.hier$L,
+                     AA=fake.df.hier$A,
+                     effort=fake.df.hier$effort,
+                     popDensity=fake.df.hier$popDensity,
+                     lmbCatch=fake.df.hier$lmbCatch)
+
+bh.inits1 <- function() {
+  a_tilde = rnorm(nLake, 0, 1)
+  b_tilde = rnorm(nLake, 0, 1)
+  mu_a = rnorm(1, 100, 0.5)
+  mu_b = rnorm(1, 100, 0.5)
+  sigma_a_unif = runif(1,-1,1)
+  sigma_b_unif = runif(1,-1,1)
+  sigma = runif(1,0.1,0.5)
+  init <- list(a_tilde=a_tilde, b_tilde=b_tilde, 
+               sigma=sigma, sigma_a_unif=sigma_a_unif, sigma_b_unif=sigma_b_unif, 
+               mu_a=mu_a, mu_b=mu_b)
+  return(init)
+}
+
+hier.inits<-function(){
+  q_mu=rlnorm(1, -2, 0.5)
+  beta=rlnorm(1, 0, 0.5)
+  phi=runif(1, min=0, max=10000)
+  mu_q_a=rnorm(1, -1,0.5)
+  mu_q_d=rnorm(1, -1,0.5)
+  mu_q_l=rnorm(1, -1,0.5)
+  sigma_q_a=rexp(1, 7)
+  sigma_q_d=rexp(1, 7)
+  sigma_q_l=rexp(1, 7)
+  init<-list(q_mu=q_mu,
+             beta=beta,
+             phi=phi,
+             mu_q_a=mu_q_a,
+             mu_q_d=mu_q_d,
+             mu_q_l=mu_q_l,
+             sigma_q_a=sigma_q_a,
+             sigma_q_d=sigma_q_d,
+             sigma_q_l=sigma_q_l)
+  return(init)
+}
+
+fake_fit_centered_hier<-stan(file="fake.hierarchical.nonlinear.nb.stan",
                  data=fake.data.hier,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+launch_shinystan(fake_fit_centered_hier)
+
+```
+trying linearized version noncentered
+
+```{r}
+fake.data.hier<-list(N=nrow(fake.df.hier),
+                     D=D,
+                     L=L,
+                     A=A,
+                     DD=fake.df.hier$D,
+                     LL=fake.df.hier$L,
+                     AA=fake.df.hier$A,
+                     log_effort=log(fake.df.hier$effort),
+                     log_popDensity=log(fake.df.hier$popDensity),
+                     lmbCatch=fake.df.hier$lmbCatch)
+
+
+
+fake_fit_noncentered_linearized<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=fake.data.hier,
+                 init=hier.inits,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=1,
                  warmup=1000,
                  iter=2000,
                  cores=1,
                  refresh=0)
-launch_shinystan(fake_fit_noncentered_hier)
 
 ```
 
