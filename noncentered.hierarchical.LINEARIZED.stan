@@ -44,20 +44,22 @@ parameters {
   
   real mu_q_l;
   real<lower=0> sigma_q_l;
-}
-
-transformed parameters{
-
+  
   array[A] real q_a_raw;
   array[D] real q_d_raw;
   array[L] real q_l_raw;
+
+
+}
+
+transformed parameters{
 
   array[N] real logCatchHat;
   
   array[A] real log_q_a;
   array[D] real log_q_d;
   array[L] real log_q_l;
-  
+
 
   for(a in 1:A){
     log_q_a[a] = mu_q_a + sigma_q_a * q_a_raw[a];
