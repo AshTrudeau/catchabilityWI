@@ -170,7 +170,8 @@ AMK.lake.date<-c("DS_20190613",
 
 long.crew<-fishSamples%>%
   group_by(sampleID)%>%
-  summarize(crew=unique(crew))%>%
+  summarize(crew=unique(crew),
+            effort=unique(effort))%>%
   # split crew into columns and then pivot longer
   separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
   pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)%>%
@@ -196,16 +197,13 @@ long.crew<-fishSamples%>%
 
 cpue<-all.data%>%
   group_by(sampleID, caughtBy)%>%
-  summarize(nCaught=n(),
-            effort=unique(effort),
-            anCPUE=nCaught/effort)%>%
-  ungroup()
+  summarize(nCaught=n())
+
 
 
 full.data<-long.crew%>%
   left_join(cpue, by=c("sampleID", "caughtBy"))%>%
-  mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))%>%
-  left_join()
+  mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))
 
 
 
@@ -299,8 +297,38 @@ dateID<-data.frame(date=unique(data.join$date),
 data.indexed<-data.join%>%
   left_join(dateID, by="date")%>%
   left_join(anglerID, by="caughtBy")%>%
-  left_join(lakeID, by="lakeID")
+  left_join(lakeID, by="lakeID")%>%
+  mutate(log_effort=log(effort))%>%
+  rename("lmbCatch"=nCaught)
+
+data.list<-list(N=nrow(data.indexed),
+                A=max(data.indexed$A),
+                D=max(data.indexed$D),
+                L=max(data.indexed$L),
+                AA=data.indexed$A,
+                DD=data.indexed$D,
+                LL=data.indexed$L,
+                lmbCatch=data.indexed$lmbCatch,
+                log_effort=data.indexed$log_effort,
+                sumCtMt=data.indexed$sumCtMt,
+                sumRt=data.indexed$sumRt,
+                surfaceArea=data.indexed$surfaceArea)
+
+
+real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+launch_shinystan(real_fit)
+
+
   
 
 ```
 
+zero effort values?
