@@ -164,9 +164,21 @@ fish_pe_recap<-fish_pe%>%
   ungroup()%>%
   left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
 
+write.csv(fish_pe_recap, here::here("output","recap.sumctmt.sumrt.surfaceArea.csv"))
+
 ```
 
 I want no pooling in this PE model'
+
+```{r}
+mom.lognorm.mu<-function(mean, var){
+  log(mean/sqrt((var/mean^2)+1))
+}
+mom.lognorm.sigma<-function(mean, var){
+  sqrt(log((var/mean^2)+1))
+}
+```
+
 
 Make list and fit
 ```{r}
@@ -184,28 +196,33 @@ pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
                  refresh=0)
                  
                  
-print(pe_all_fit, pars=c("PE","popDensity", "lp__"), probs=c(.025,.5,.975))
+print(pe_all_fit, pars=c("PE","popDensity"), probs=c(.025,.5,.975))
 
-traceplot(pe_all_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
+traceplot(pe_all_fit, pars=c("PE","popDensity"), inc_warmup=FALSE, nrow=2)
 
 draws<-extract(pe_all_fit)
 
-pe.draws.df<-as.data.frame(draws)
+pe.draws.df<-as.data.frame(draws$PE)
+popDensity.draws.df<-as.data.frame(draws$popDensity)
+
 lakeID<-fish_pe_recap$lakeID
 
-names(pe.draws.df)<-c(lakeID, "likelihood")
+names(pe.draws.df)<-c(lakeID)
+names(popDensity.draws.df)<-lakeID
 
-pe.draws.long.lognorm<-pe.draws.df%>%
+popDensity.draws.long.lognorm<-popDensity.draws.df%>%
   dplyr::select(AR:WS)%>%
-  pivot_longer(cols=everything(), names_to="lakeID", values_to="PE")
+  pivot_longer(cols=everything(), names_to="lakeID", values_to="popDensity")
 
-ggplot(pe.draws.long.lognorm)+
-  geom_histogram(aes(x=PE))
+ggplot(popDensity.draws.long.lognorm)+
+  geom_histogram(aes(x=popDensity, fill=lakeID))
 
-pe.draws.long.lognorm%>%
+mean.sd.popDensity<-popDensity.draws.long.lognorm%>%
   group_by(lakeID)%>%
-  summarize(mean.PE=mean(PE),
-            sd.PE=sd(PE))
+  summarize(mean.popDensity=mean(popDensity),
+            sd.popDensity=sd(popDensity))
+
+write.csv(mean.sd.popDensity, here::here("output","bayesian.pop.density.csv"))
 ```
 Both gamma and lognormal dists on PE work, but they give different estimates. Place to sensitivity test
 ohhh priors matter a lot. with a less specific prior on PE, estimates spread out a lot. 

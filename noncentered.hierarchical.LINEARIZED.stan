@@ -21,9 +21,16 @@ data {
 
   // all observations of effort (covariate)
   array[N] real log_effort;
-  // all estimates of population density (covariate)
-  array[N] real log_popDensity;
+
+  // for population estimate
+  vector[N] sumCtMt;
+  vector[N] surfaceArea;
+  int sumRt[N];
   
+  //array[L] real<lower=0> sumCtMt;
+  //array[L] int<lower=0> sumRt;
+  //array[L] real<lower=0> surfaceArea;
+
 }
 
 
@@ -48,6 +55,8 @@ parameters {
   array[A] real q_a_raw;
   array[D] real q_d_raw;
   array[L] real q_l_raw;
+  
+  vector<lower=0>[N] PE;
 
 
 }
@@ -59,6 +68,13 @@ transformed parameters{
   array[A] real log_q_a;
   array[D] real log_q_d;
   array[L] real log_q_l;
+  
+  // for population density
+  vector<lower=0>[N] popDensity;
+  vector[N] log_popDensity;
+  
+  popDensity = PE ./ surfaceArea;
+  log_popDensity = log(popDensity);
 
 
   for(a in 1:A){
@@ -75,10 +91,14 @@ for(i in 1:N){
   logCatchHat[i] = log_effort[i] * log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[i];
 }
 
+
 }
 
 model {
   
+  target += lognormal_lpdf(PE | 0,2);
+  target += poisson_lpmf(sumRt | sumCtMt ./ PE);
+  target += lognormal_lpdf(popDensity | 0,1);
   
   target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
  // target += poisson_log_lpmf(lmbCatch|logCatchHat);
