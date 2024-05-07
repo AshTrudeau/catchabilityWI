@@ -81,6 +81,7 @@ model {
   
   
   target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
+ // target += poisson_log_lpmf(lmbCatch|logCatchHat);
 
   target += std_normal_lpdf(q_a_raw);
   target += std_normal_lpdf(q_d_raw);

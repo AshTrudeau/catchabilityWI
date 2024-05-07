@@ -20,6 +20,7 @@ dbTableList(db.dir, db)
 ```{r}
 metadata<-dbTable("metadata", fpath=db.dir)
 projects<-dbTable("projects", fpath=db.dir)
+lakes<-dbTable("lakes", fpath=db.dir)
 
 # not useful
 #samples<-dbTable("samples", fpath=db.dir)%>%
@@ -142,8 +143,6 @@ Using FSA package to begin with,
   
 
 ```{r}
-check<-filter(fish_vars, is.na(clipApply) & is.na(clipRecapture))
-check.sample<-unique(check$sampleID)
 
 fish_vars<-fish_info%>%
   # filter to project 37--tagged with PIT tag
@@ -170,6 +169,7 @@ fish_vars<-fish_info%>%
   ungroup()
 
 
+
 # finding good starting lake
 nRecap<-fish_vars%>%
   group_by(lakeID)%>%
@@ -182,7 +182,8 @@ theseLakes<-nRecap$lakeID
 # wow, that's not a lot of recaps
 
 fish_vars_f<-fish_vars%>%
-  filter(lakeID%in%theseLakes)
+  filter(lakeID%in%theseLakes)%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
 
 
 JS_test<-filter(fish_vars, lakeID=="JS")
@@ -297,33 +298,5 @@ Trying manually:
 JS_estimate_manual<-JS_test%>%
   mutate(ct_mt=nCaught*nMarksPrev)%>%
   summarize(PE=sum(ct_mt)/sum(nRecap))
-```
-
-What if I assume those blank AF cells were a mistake?
-
-```{r}
-fish_vars<-fish_info%>%
-  # filter to project 37--tagged with PIT tag
-  filter(projectID=="37")
-  mutate(clipRecapture=as.numeric(clipRecapture),
-        # tagged=ifelse(clipApply=="AF",1,0),
-         sampleDate=ymd(str_split_fixed(sampleID, "_", 4)[,3]),
-         lakeID=str_split_fixed(sampleID, "_", 2)[,1])%>%
-  #  group by sampling event
-  group_by(sampleID)%>%
-  # summarize number of fish 1) caught, 2) tagged, 3)  recaptured
-  summarize(nCaught=n(),
-            nTagged=sum(tagged, na.rm=T),
-            nRecap=sum(clipRecapture, na.rm=T),
-            lakeID=unique(lakeID),
-            sampleDate=unique(sampleDate))%>%
-  ungroup()%>%
-  group_by(lakeID)%>%
-  arrange(sampleDate, .by_group=TRUE)%>%
-  mutate(nMarksCum=cumsum(nTagged),
-         nMarksPrev=lag(nMarksCum),
-         nMarksPrev=ifelse(is.na(nMarksPrev), 0, nMarksPrev))%>%
-  ungroup()
-
 ```
 

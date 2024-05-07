@@ -44,15 +44,16 @@ parameters {
   
   real mu_q_l;
   real<lower=0> sigma_q_l;
-}
-
-transformed parameters{
-
+  
   array[A] real q_a_raw;
   array[D] real q_d_raw;
   array[L] real q_l_raw;
 
-  //array[N] real<lower=0> catchHat;
+}
+
+transformed parameters{
+
+
   array[N] real logCatchHat;
   
   array[A] real q_a;

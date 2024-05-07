@@ -2,6 +2,8 @@
 
 // Now adding nesting--population estimates for multiple lakes, NO POOLING
 
+//  now adding estimate of population density
+
 data {
   // total number of lakes
   int<lower=1> L;

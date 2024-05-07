@@ -287,3 +287,4 @@ launch_shinystan(fake_fit_noncentered_linearized)
 
 ```
 
+This model also runs with lmbCatch as a Poisson distribution

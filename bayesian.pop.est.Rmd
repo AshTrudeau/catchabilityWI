@@ -37,6 +37,7 @@ fish_data<-inner_join(fish_samples, fish_info, by="sampleID")%>%
 
 samples<-unique(fish_data$sampleID)
 
+lakes<-dbTable("lakes", fpath=db.dir)
 ```
 
 ```{r}
@@ -151,13 +152,17 @@ recap_count<-fish_pe%>%
   arrange(desc(nRecap))%>%
   filter(nRecap>0)
 
+# surface area for Found lake was missing. Got it from WI DNR (find a lake tool) and converted to hectares
+lakes[lakes$lakeID=="FD",]$surfaceArea<-136.0
 
 fish_pe_recap<-fish_pe%>%
   filter(lakeID%in%recap_count$lakeID)%>%
   mutate(CtMt=allFishCaught*markedPrior)%>%
   group_by(lakeID)%>%
   summarize(sumCtMt=sum(CtMt),
-            sumRt=sum(recapturedNow))
+            sumRt=sum(recapturedNow))%>%
+  ungroup()%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
 
 ```
 
@@ -167,7 +172,8 @@ Make list and fit
 ```{r}
 pe_data_all<-list(L=nrow(fish_pe_recap),
                   sumCtMt=fish_pe_recap$sumCtMt,
-                  sumRt=fish_pe_recap$sumRt)
+                  sumRt=fish_pe_recap$sumRt,
+                  surfaceArea=fish_pe_recap$surfaceArea)
 
 pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
                  data=pe_data_all,
