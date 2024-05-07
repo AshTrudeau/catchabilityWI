@@ -12,13 +12,17 @@ data {
   vector[L] sumCtMt;
   // recaps at each sampling event t
   int sumRt[L];
+  vector[L] surfaceArea;
 }
 
 
 parameters {
   // I want one estimate of PE for each lake L
   vector<lower=0>[L]  PE;
+}
 
+transformed parameters{
+  vector<lower=0>[L] popDensity = PE ./ surfaceArea;
 }
 
 // The model to be estimated. 
@@ -28,6 +32,7 @@ model {
     //PE~gamma(0.001, 0.001);
     PE~lognormal(0,1);
     sumRt~poisson(sumCtMt ./ PE);
+    popDensity~lognormal(0,2);
 
 }
 

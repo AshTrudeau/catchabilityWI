@@ -184,7 +184,7 @@ pe_all_fit<-stan(file="pop_estimate_poisson_mult_lakes.stan",
                  refresh=0)
                  
                  
-print(pe_all_fit, pars=c("PE", "lp__"), probs=c(.025,.5,.975))
+print(pe_all_fit, pars=c("PE","popDensity", "lp__"), probs=c(.025,.5,.975))
 
 traceplot(pe_all_fit, pars=c("PE","lp__"), inc_warmup=FALSE, nrow=2)
 
