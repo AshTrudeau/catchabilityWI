@@ -324,7 +324,7 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
-                 iter=2000,
+                 iter=3000,
                  cores=4,
                  refresh=0)
 launch_shinystan(real_fit)
@@ -340,6 +340,10 @@ Let's start looking at the draws to start interpreting parameter values (and mak
 print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d", "sigma_q_d", "mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
 
 ```
+```{r}
+print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d", "sigma_q_d", "mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
+
+```
 
 ```{r}
 draws<-extract(real_fit)
@@ -347,5 +351,119 @@ draws<-extract(real_fit)
 # pop estimates first
 
 popDensity<-data.frame(draws$popDensity)
+names(popDensity)<-lakeID$lakeID
+
+popDensityLong<-popDensity%>%
+  pivot_longer(cols=everything(), names_to="lakeID", values_to="popDensity")
+
+library(RColorBrewer)
+palette<-c(brewer.pal(12, "Paired"), "gray")
+
+ggplot(popDensityLong)+
+  geom_histogram(aes(x=popDensity, fill=lakeID))+
+  scale_fill_manual(values=palette)+
+  facet_wrap(.~lakeID, nrow=3)+
+  theme_bw()
 ```
+
+next angler effects
+http://vrl.cs.brown.edu/color for color palettes
+```{r}
+q_a<-data.frame(draws$q_a)
+names(q_a)<-anglerID$caughtBy
+
+q_aLong<-q_a%>%
+  pivot_longer(cols=everything(), names_to="anglerID", values_to="q_a")
+
+palette<-c("#78b98f", "#de0ca3", "#74ee65", "#69306e", "#59a20c", "#903be2", "#c0e15c", "#891c1a", "#64d4fd", "#0a4f4e", "#e7ad79", "#1945c5", "#edb1ff", "#683d0d", "#fe707d", "#445a06", "#4787c9", "#fbd127")
+
+ggplot(q_aLong)+
+  geom_histogram(aes(x=q_a, fill=anglerID))+
+  scale_fill_manual(values=palette)+
+  facet_wrap(.~anglerID, nrow=4)+
+  theme_bw()
+
+
+```
+log_q_a might be more distinctive
+
+```{r}
+log_q_a<-data.frame(draws$log_q_a)
+names(log_q_a)<-anglerID$caughtBy
+
+log_q_aLong<-log_q_a%>%
+  pivot_longer(cols=everything(), names_to="anglerID", values_to="log_q_a")
+
+palette<-c("#78b98f", "#de0ca3", "#74ee65", "#69306e", "#59a20c", "#903be2", "#c0e15c", "#891c1a", "#64d4fd", "#0a4f4e", "#e7ad79", "#1945c5", "#edb1ff", "#683d0d", "#fe707d", "#445a06", "#4787c9", "#fbd127")
+
+ggplot(log_q_aLong)+
+  geom_histogram(aes(x=log_q_a, fill=anglerID))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  scale_fill_manual(values=palette)+
+  facet_wrap(.~anglerID, nrow=4)+
+  theme_bw()
+
+```
+q_d has too many intercepts to show it like this. 
+
+```{r}
+log_q_l<-data.frame(draws$log_q_l)
+names(log_q_l)<-lakeID$lakeID
+
+log_q_lLong<-log_q_l%>%
+  pivot_longer(cols=everything(), names_to="lakeID", values_to="log_q_l")
+
+
+ggplot(log_q_lLong)+
+  geom_histogram(aes(x=log_q_l, fill=lakeID))+
+  geom_vline(xintercept=0, linetype="dashed")+
+ # scale_fill_manual(values=palette)+
+  facet_wrap(.~lakeID, nrow=4)+
+  theme_bw()
+
+
+
+```
+
+Lots more lake effect here, even when pop density is accounted for
+
+```{r}
+log_q_d<-data.frame(draws$log_q_d)
+names(log_q_d)<-dateID$date
+
+log_q_dLong<-log_q_d%>%
+  pivot_longer(cols=everything(), names_to="date", values_to="log_q_d")%>%
+  mutate(date=ymd(date))%>%
+  group_by(date)%>%
+  summarize(mean_log_q_d=mean(log_q_d),
+            sd_log_q_d=sd(log_q_d),
+            upper_95=mean_log_q_d+1.96*sd_log_q_d,
+
+                        lower_95=mean_log_q_d-1.96*sd_log_q_d)%>%
+  ungroup()%>%
+  mutate(year=year(date))
+
+
+ggplot(log_q_dLong)+
+  geom_point(aes(x=date, y=mean_log_q_d))+
+  geom_errorbar(aes(x=date, ymin=lower_95, ymax=upper_95))+
+  facet_wrap(.~year, nrow=2, scales="free_x")+
+  theme_bw()
+```
+other parameters
+
+```{r}
+names(draws)
+
+phi<-data.frame(draws$phi)
+beta<-data.frame(draws$beta)
+names(beta)<-"beta"
+
+ggplot(beta)+
+  geom_histogram(aes(x=beta))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  theme_bw()
+
+```
+
 

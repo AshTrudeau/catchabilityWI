@@ -27,10 +27,6 @@ data {
   vector[L] surfaceArea;
   int sumRt[L];
   
-  //array[L] real<lower=0> sumCtMt;
-  //array[L] int<lower=0> sumRt;
-  //array[L] real<lower=0> surfaceArea;
-
 }
 
 
@@ -92,7 +88,7 @@ transformed parameters{
   }
 
 for(i in 1:N){
-  logCatchHat[i] = log_effort[i] * log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
+  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
 }
 
   q_a = exp(log_q_a);
@@ -108,13 +104,12 @@ model {
   target += lognormal_lpdf(popDensity | 0,1);
   
   target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
- // target += poisson_log_lpmf(lmbCatch|logCatchHat);
 
   target += std_normal_lpdf(q_a_raw);
   target += std_normal_lpdf(q_d_raw);
   target += std_normal_lpdf(q_l_raw);
   
-  target += normal_lpdf(log_q_mu | 0,11);
+  target += normal_lpdf(log_q_mu | 0,1);
 
 
   target += normal_lpdf(mu_q_a | 0,1);
@@ -127,13 +122,13 @@ model {
   target += exponential_lpdf(sigma_q_l | 5);
   
 
-  // started out with gamma distribution on phi, tried switching to lognormal to better reflect simulated error
-  // resulted in more divergences for some reason? inv_gamma was recommended for log param NB, so landed on that
 
-  
-  target += inv_gamma_lpdf(phi | 0.4, 0.3);
+  //target += exponential_lpdf(phi | 1);
+ // target += lognormal_lpdf(phi | 0,1);
+  //target += inv_gamma_lpdf(phi | 0.4, 0.3);
+  target += gamma_lpdf(phi| 1,1);
 
-  target += lognormal_lpdf(beta | -1,0.5);
+  target += lognormal_lpdf(beta | -1,1);
   
 
 
