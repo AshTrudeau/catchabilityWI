@@ -23,9 +23,9 @@ data {
   array[N] real log_effort;
 
   // for population estimate
-  vector[N] sumCtMt;
-  vector[N] surfaceArea;
-  int sumRt[N];
+  vector[L] sumCtMt;
+  vector[L] surfaceArea;
+  int sumRt[L];
   
   //array[L] real<lower=0> sumCtMt;
   //array[L] int<lower=0> sumRt;
@@ -56,7 +56,7 @@ parameters {
   array[D] real q_d_raw;
   array[L] real q_l_raw;
   
-  vector<lower=0>[N] PE;
+  vector<lower=0>[L] PE;
 
 
 }
@@ -69,9 +69,13 @@ transformed parameters{
   array[D] real log_q_d;
   array[L] real log_q_l;
   
+  array[A] real q_a;
+  array[D] real q_d;
+  array[L] real q_l;
+  
   // for population density
-  vector<lower=0>[N] popDensity;
-  vector[N] log_popDensity;
+  vector<lower=0>[L] popDensity;
+  vector[L] log_popDensity;
   
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
@@ -88,9 +92,12 @@ transformed parameters{
   }
 
 for(i in 1:N){
-  logCatchHat[i] = log_effort[i] * log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[i];
+  logCatchHat[i] = log_effort[i] * log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
 }
 
+  q_a = exp(log_q_a);
+  q_d = exp(log_q_d);
+  q_l = exp(log_q_l);
 
 }
 

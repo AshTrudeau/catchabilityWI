@@ -285,8 +285,11 @@ data.join<-full.data%>%
   left_join(fish_pe_recap, by="lakeID")
 
 
-lakeID<-data.frame(lakeID=unique(data.join$lakeID),
-                   L=seq(1:13))
+lakeID<-data.frame(lakeID=fish_pe_recap$lakeID,
+                   L=seq(1:13),
+                   sumCtMt=fish_pe_recap$sumCtMt,
+                   sumRt=fish_pe_recap$sumRt,
+                   surfaceArea=fish_pe_recap$surfaceArea)
 
 anglerID<-data.frame(caughtBy=unique(data.join$caughtBy),
                      A=seq(1:18))
@@ -310,9 +313,9 @@ data.list<-list(N=nrow(data.indexed),
                 LL=data.indexed$L,
                 lmbCatch=data.indexed$lmbCatch,
                 log_effort=data.indexed$log_effort,
-                sumCtMt=data.indexed$sumCtMt,
-                sumRt=data.indexed$sumRt,
-                surfaceArea=data.indexed$surfaceArea)
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea)
 
 
 real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
@@ -331,4 +334,18 @@ launch_shinystan(real_fit)
 
 ```
 
-zero effort values?
+Let's start looking at the draws to start interpreting parameter values (and making pretty graphs)
+
+```{r}
+print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d", "sigma_q_d", "mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
+
+```
+
+```{r}
+draws<-extract(real_fit)
+
+# pop estimates first
+
+popDensity<-data.frame(draws$popDensity)
+```
+
