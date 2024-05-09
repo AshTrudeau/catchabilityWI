@@ -98,9 +98,9 @@ for(i in 1:N){
 
 model {
   
-  target += lognormal_lpdf(PE | 0,2);
+  target += lognormal_lpdf(PE | 0,3);
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
-  target += lognormal_lpdf(popDensity | 0,1);
+  target += lognormal_lpdf(popDensity | 0,2);
   
   target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
 
@@ -116,9 +116,9 @@ model {
   target += normal_lpdf(mu_q_l | 0,1);
   
 
-  target += exponential_lpdf(sigma_q_a | 5);
-  target += exponential_lpdf(sigma_q_d | 5);
-  target += exponential_lpdf(sigma_q_l | 5);
+  target += exponential_lpdf(sigma_q_a | 1);
+  target += exponential_lpdf(sigma_q_d | 1);
+  target += exponential_lpdf(sigma_q_l | 1);
   
 
 

@@ -346,7 +346,6 @@ print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d",
 ```
 
 ```{r}
-draws<-extract(real_fit)
 
 # draws is a list of draws from the posterior for each parameter
 popDensity_fun<-function(draws){
@@ -362,7 +361,7 @@ popDensity_fun<-function(draws){
   ggplot(popDensityLong)+
     geom_histogram(aes(x=popDensity, fill=lakeID))+
     scale_fill_manual(values=palette)+
-    facet_wrap(.~lakeID, nrow=3)+
+    facet_wrap(.~lakeID, nrow=3, scales="free_x")+
     theme_bw()
   
 }
@@ -433,6 +432,8 @@ other_params_fun<-function(draws){
   names(phi)<-"phi"
   beta<-data.frame(draws$beta)
   names(beta)<-"beta"
+  log_q_mu<-data.frame(draws$log_q_mu)
+  names(log_q_mu)<-"log_q_mu"
 
   betaPlot<-ggplot(beta)+
     geom_histogram(aes(x=beta))+
@@ -444,9 +445,16 @@ other_params_fun<-function(draws){
     geom_vline(xintercept=0, linetype="dashed")+
     theme_bw()
   
-  plot_grid(betaPlot, phiPlot)
+  muPlot<-ggplot(log_q_mu)+
+    geom_histogram(aes(x=log_q_mu))+
+    geom_vline(xintercept=0, linetype="dashed")+
+    theme_bw()
+
+  
+  plot_grid(betaPlot, phiPlot, muPlot)
 
 }
+
 
 ```
 
@@ -455,16 +463,262 @@ http://vrl.cs.brown.edu/color for color palettes
 
 These are the draws from the posterior from the"original" model before I start messing with priors
 ```{r}
-popDensity_fun(draws=draws)
-log_q_a_fun(draws=draws)
-log_q_l_fun(draws=draws)
-log_q_d_fun(draws=draws)
-other_params_fun(draws=draws)
+drawsOriginal<-extract(real_fit)
+
+popDensity_fun(draws=drawsOriginal)
+log_q_a_fun(draws=drawsOriginal)
+log_q_l_fun(draws=drawsOriginal)
+log_q_d_fun(draws=drawsOriginal)
+other_params_fun(draws=drawsOriginal)
 
 ```
 
 Next I'm going to get rid of the prior on PE, which I think is redundant
 
 
+```{r}
+real_fit_pe_prior<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
 
+```
+
+
+Test priors on population density
+```{r}
+draws<-extract(real_fit_pe_prior)
+popDensity_fun(draws=draws)
+log_q_a_fun(draws=draws)
+log_q_l_fun(draws=draws)
+log_q_d_fun(draws=draws)
+other_params_fun(draws=draws)
+
+
+```
+The population densities become way more uncertain and on average, larger. The rest of the posteriors don't change much, though CIs get wider
+
+What if I make priors on PE wider? (change SD to 3) also changing priors on population density to lognorm(0,2)
+```{r}
+real_fit_wide_pe_popDensity<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_widePEPop<-extract(real_fit_pe_prior)
+popDensity_fun(draws=draws_widePEPop)
+log_q_a_fun(draws=draws_widePEPop)
+log_q_l_fun(draws=draws_widePEPop)
+log_q_d_fun(draws=draws_widePEPop)
+other_params_fun(draws=draws_widePEPop)
+
+
+```
+Priors on PE and popDensity have a strong effect on some lake-specific estimates, but not much effect on other parameters. I'm going to keep those priors wider for now. 
+
+Test priors on phi and beta
+beta first--changin sigma from 1 to 2 (wider prior)
+```{r}
+real_fit_wide_beta<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_wide_beta<-extract(real_fit_wide_beta)
+popDensity_fun(draws=draws_wide_beta)
+log_q_a_fun(draws=draws_wide_beta)
+log_q_l_fun(draws=draws_wide_beta)
+log_q_d_fun(draws=draws_wide_beta)
+other_params_fun(draws=draws_wide_beta)
+
+```
+wide prior on beta slightly increases beta CI, butfew other noticeable changees
+
+change mean on beta distribution from -1 to 0 (slightly wider)
+
+```{r}
+real_fit_mean_beta<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_mean_beta<-extract(real_fit_mean_beta)
+popDensity_fun(draws=draws_mean_beta)
+log_q_a_fun(draws=draws_mean_beta)
+log_q_l_fun(draws=draws_mean_beta)
+log_q_d_fun(draws=draws_mean_beta)
+other_params_fun(draws=draws_mean_beta)
+
+```
+No obvious changes. Beta distribution is a little wider--right tail goes out to 2. I'm going to stick with -1 mean because of prior knowledge on beta values (hyperstability)
+
+```{r}
+real_fit_wide_phi<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_wide_phi<-extract(real_fit_wide_phi)
+popDensity_fun(draws=draws_wide_phi)
+log_q_a_fun(draws=draws_wide_phi)
+log_q_l_fun(draws=draws_wide_phi)
+log_q_d_fun(draws=draws_wide_phi)
+other_params_fun(draws=draws_wide_phi)
+
+```
+Test priors on sigma_q_a,d, l.Exponential(1) instead of exponential(5), wider prior
+
+```{r}
+real_fit_wide_sigma<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_wide_sigma<-extract(real_fit_wide_sigma)
+popDensity_fun(draws=draws_wide_sigma)
+log_q_a_fun(draws=draws_wide_sigma)
+log_q_l_fun(draws=draws_wide_sigma)
+log_q_d_fun(draws=draws_wide_sigma)
+other_params_fun(draws=draws_wide_sigma)
+
+```
+No obvious changes, except that log_q_mu parameter gets narrower
+
+Test priors on log_q_mu
+ (sigma from 1 to 2)
+```{r}
+real_fit_wide_log_q_mu<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_wide_log_q_mu<-extract(real_fit_wide_log_q_mu)
+popDensity_fun(draws=draws_wide_log_q_mu)
+log_q_a_fun(draws=draws_wide_log_q_mu)
+log_q_l_fun(draws=draws_wide_log_q_mu)
+log_q_d_fun(draws=draws_wide_log_q_mu)
+other_params_fun(draws=draws_wide_log_q_mu)
+
+```
+
+There's some slight shrinkage towards the mean on q_a and q_l values
+Test priors on mu_q_a,d, l
+
+keep mean at 0, but increase sigma from 1 to 2
+```{r}
+real_fit_wide_mu_q<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_wide_mu_q<-extract(real_fit_wide_mu_q)
+popDensity_fun(draws=draws_wide_mu_q)
+log_q_a_fun(draws=draws_wide_mu_q)
+log_q_l_fun(draws=draws_wide_mu_q)
+log_q_d_fun(draws=draws_wide_mu_q)
+other_params_fun(draws=draws_wide_mu_q)
+
+```
+Really noticeable shrinkage towards 0 (and wider CIs) on all q posteriors, including log_q_mu
+
+What if I reduce sigma just a little bit, to 1.5? 
+
+```{r}
+real_fit_less_wide_mu_q<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_less_wide_mu_q<-extract(real_fit_less_wide_mu_q)
+popDensity_fun(draws=draws_less_wide_mu_q)
+log_q_a_fun(draws=draws_less_wide_mu_q)
+log_q_l_fun(draws=draws_less_wide_mu_q)
+log_q_d_fun(draws=draws_less_wide_mu_q)
+other_params_fun(draws=draws_less_wide_mu_q)
+
+```
+Same, but less extreme
+
+what if I make the prior more narrow?  0.5
+
+```{r}
+real_fit_narrow_mu_q<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_narrow_mu_q<-extract(real_fit_narrow_mu_q)
+popDensity_fun(draws=draws_narrow_mu_q)
+log_q_a_fun(draws=draws_narrow_mu_q)
+log_q_l_fun(draws=draws_narrow_mu_q)
+log_q_d_fun(draws=draws_narrow_mu_q)
+other_params_fun(draws=draws_narrow_mu_q)
+
+```
+I see some slightdifferentiation in log_q_a with narrower prior, compare JC above (narrow prior) and below (original fit)
+```{r}
+log_q_a_fun(draws=drawsOriginal)
+
+```
+
+```{r}
+summary<-summary(real_fit, R2=TRUE)
+str(summary)
+```
+
+
+Check fit to data--posterior predictive sampling--does predicted data resemble observed data?
+
+
+Test results whenlakes with only 1 recap are removed
 
