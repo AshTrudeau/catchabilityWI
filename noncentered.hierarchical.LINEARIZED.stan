@@ -38,7 +38,6 @@ parameters {
   real<lower=0> beta;
   real<lower=0> phi;
   
-  // hyperparameters
   real mu_q_a;
   real<lower=0> sigma_q_a;
   
@@ -123,9 +122,6 @@ model {
   
 
 
-  //target += exponential_lpdf(phi | 1);
- // target += lognormal_lpdf(phi | 0,1);
-  //target += inv_gamma_lpdf(phi | 0.4, 0.3);
   target += gamma_lpdf(phi| 1,1);
 
   target += lognormal_lpdf(beta | -1,1);
