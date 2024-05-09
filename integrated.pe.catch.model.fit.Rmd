@@ -6,7 +6,7 @@ date: "2024-05-07"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot)
 ```
 
 Make 'fake' data. (catch is simulated, population densities are real)
@@ -719,6 +719,142 @@ str(summary)
 
 Check fit to data--posterior predictive sampling--does predicted data resemble observed data?
 
-
+useful faq for cross validation: https://users.aalto.fi/~ave/CV-FAQ.html 
 Test results whenlakes with only 1 recap are removed
 
+citable source: Vehtari et al 2017, Practical Bayesian model evaluation using leave-one-out cross-validation and WAIC
+this was very helpful guidance: https://mc-stan.org/loo/articles/loo2-with-rstan.html 
+
+```{r}
+real_fit_loglik_pred<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik<-extract_log_lik(real_fit_loglik_pred, merge_chains=FALSE)
+r_eff<-relative_eff(exp(log_lik), cores=2)
+loo_mod<-loo(log_lik, r_eff=r_eff, cores=2)
+
+loo_mod
+
+loo_compare(loo_mod, loo)
+```
+one "bad" k diagnostic value (0.5% of observations)
+this model fits better than the null model, yay
+
+```{r}
+#print(real_fit_loglik_pred, pars=c("predictions"), probs=c(.025,.5,.975))
+parm_pred<-extract(real_fit_loglik_pred)
+
+predictions<-data.frame(parm_pred$predictions)
+names(predictions)<-seq(1:205)
+
+pred.long<-predictions%>%
+  pivot_longer(cols=everything(),
+               names_to="anglerID",
+               values_to="predictedCatch")
+
+hist(sample(pred.long$predictedCatch, 205))
+hist(data.list$lmbCatch)
+```
+Bayesian R2
+
+```{r}
+r2<-data.frame(r2=parm_pred$bayes_r2)
+hist(r2)
+
+r2_short<-sample_n(r2, 1000)
+
+ggplot(r2_short)+
+  geom_histogram(aes(x=r2))+
+  xlab("Bayesian R2")+
+  theme_bw()
+ggsave(here::here("figures","posteriors", "bayes_r2.png"), height=4, width=6)
+```
+
+
+Predictions are 8000 repetitions of predictions for 205 observations
+
+```{r}
+predictions.df<-data.frame(N=rep(seq(1:205), 8000),
+                           pred=pred.long$predictedCatch,
+                           AA=rep(data.list$AA), 8000,
+                           DD=rep(data.list$DD), 8000,
+                           LL=rep(data.list$LL), 8000,
+                           obs=rep(data.list$lmbCatch), 8000)
+
+fewer.obs<-sample_n(predictions.df,1000)
+
+ggplot(fewer.obs)+
+  geom_point(aes(x=obs, y=pred))+
+  geom_abline(slope=1, intercept=0,linetype="dashed")+
+  xlab("observed LMB catch")+
+  ylab("predicted LMB catch")+
+  theme_bw()
+ggsave(here::here("figures","posteriors", "pred.vs.obs.png"), height=4, width=6)
+```
+That doesn't look too bad!One thing, though, is that the model doesn't predict zero catches, just very small numbers. If I round down, it still predicts fewer zeroes than observed
+
+```{r}
+
+ggplot(fewer.obs)+
+geom_histogram(aes(x=obs), fill="gray", alpha=0.5)+
+geom_histogram(aes(x=pred), fill="red", alpha=0.5)+
+  theme_bw()
+ggsave(here::here("figures","posteriors", "pred.obs.hist.png"), height=4, width=6)
+
+```
+
+
+saving posteriors
+
+```{r}
+popDensity_fun(draws=parm_pred)
+ggsave(here::here("figures","posteriors","popDensity.png"))
+log_q_a_fun(draws=parm_pred)
+ggsave(here::here("figures", "posteriors", "log_q_a.png"))
+log_q_l_fun(draws=parm_pred)
+ggsave(here::here("figures","posteriors","log_q_l.png"))
+log_q_d_fun(draws=parm_pred)
+ggsave(here::here("figures","posteriors","log_q_d.png"))
+other_params_fun(draws=parm_pred)
+ggsave(here::here("figures","posteriors","beta.phi.log_q_mu.png"))
+
+```
+null model
+
+```{r}
+null.data.list<-list(N=205,
+                    lmbCatch=data.indexed$lmbCatch)
+
+null_fit<-stan(file="null.model.stan",
+                 data=null.data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+extract<-extract(null_fit)
+
+log_lik<-extract_log_lik(null_fit, merge_chains=FALSE)
+r_eff<-relative_eff(exp(log_lik), cores=2)
+loo<-loo(log_lik, r_eff=r_eff, cores=2)
+
+loo
+```
+
+Now looking into ICC, partitioning variance among random effects
+
+Forum post gets into it a little https://discourse.mc-stan.org/t/extending-the-interclass-correlation-coefficient-icc-aka-repeatability-aka-heritability-for-bayesian-models/27793 
+
+Responses suggest 'Doors and Corners' pre-print, which I need to finish reading
+
+If I can't cite a pre-print, it cites several peer-reviewed papers using this approach

@@ -126,7 +126,30 @@ model {
 
   target += lognormal_lpdf(beta | -1,1);
   
+}
 
+generated quantities{
+  vector[N] log_lik;
+  array[N] real predictions;
+  array[N] real diff;
+  real resid_var;
+  real bayes_r2;
+  
+  
+  for(n in 1:N){
+    log_lik[n] = neg_binomial_2_log_lpmf(lmbCatch[n] | log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]], phi);
+  }
+  
+  for(n in 1:N){
+    predictions[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
+  }
+  
+  for(n in 1:N){
+    diff[n] = predictions[n] - lmbCatch[n];
+  }
 
+  resid_var=variance(diff);
+  
+  bayes_r2=variance(predictions)./(variance(predictions)+resid_var);
 }
 
