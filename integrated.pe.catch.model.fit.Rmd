@@ -264,6 +264,8 @@ recap_count<-fish_pe%>%
   arrange(desc(nRecap))%>%
   filter(nRecap>0)
 
+recap_over_1<-filter(recap_count, nRecap>1)
+
 # surface area for Found lake was missing. Got it from WI DNR (find a lake tool) and converted to hectares
 lakes[lakes$lakeID=="FD",]$surfaceArea<-136.0
 
@@ -337,11 +339,7 @@ launch_shinystan(real_fit)
 Let's start looking at the draws to start interpreting parameter values (and making pretty graphs)
 
 ```{r}
-print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d", "sigma_q_d", "mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
-
-```
-```{r}
-print(real_fit, pars=c("log_q_mu","beta","phi", "mu_q_a", "sigma_q_a", "mu_q_d", "sigma_q_d", "mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
+print(real_fit, pars=c("log_q_mu","beta","phi", "log_mu_q_a", "sigma_q_a", "log_mu_q_d", "sigma_q_d", "log_mu_q_l", "sigma_q_l", "popDensity"), probs=c(.025,.5,.975))
 
 ```
 
@@ -359,7 +357,7 @@ popDensity_fun<-function(draws){
   palette<-c(brewer.pal(12, "Paired"), "gray")
 
   ggplot(popDensityLong)+
-    geom_histogram(aes(x=popDensity, fill=lakeID))+
+    geom_density(aes(x=popDensity, fill=lakeID))+
     scale_fill_manual(values=palette)+
     facet_wrap(.~lakeID, nrow=3, scales="free_x")+
     theme_bw()
@@ -379,7 +377,7 @@ log_q_a_fun<-function(draws){
              "#445a06", "#4787c9", "#fbd127")
 
   ggplot(log_q_aLong)+
-    geom_histogram(aes(x=log_q_a, fill=anglerID))+
+    geom_density(aes(x=log_q_a, fill=anglerID))+
     geom_vline(xintercept=0, linetype="dashed")+
     scale_fill_manual(values=palette)+
     facet_wrap(.~anglerID, nrow=4)+
@@ -396,7 +394,7 @@ log_q_l_fun<-function(draws){
 
 
 ggplot(log_q_lLong)+
-    geom_histogram(aes(x=log_q_l, fill=lakeID))+
+    geom_density(aes(x=log_q_l, fill=lakeID))+
     geom_vline(xintercept=0, linetype="dashed")+
  # scale_fill_manual(values=palette)+
     facet_wrap(.~lakeID, nrow=4)+
@@ -436,17 +434,17 @@ other_params_fun<-function(draws){
   names(log_q_mu)<-"log_q_mu"
 
   betaPlot<-ggplot(beta)+
-    geom_histogram(aes(x=beta))+
+    geom_density(aes(x=beta), fill="lightblue")+
     geom_vline(xintercept=0, linetype="dashed")+
     theme_bw()
 
   phiPlot<-ggplot(phi)+
-    geom_histogram(aes(x=phi))+
+    geom_density(aes(x=phi), fill="lightblue")+
     geom_vline(xintercept=0, linetype="dashed")+
     theme_bw()
   
   muPlot<-ggplot(log_q_mu)+
-    geom_histogram(aes(x=log_q_mu))+
+    geom_density(aes(x=log_q_mu), fill="lightblue")+
     geom_vline(xintercept=0, linetype="dashed")+
     theme_bw()
 
@@ -472,6 +470,28 @@ log_q_d_fun(draws=drawsOriginal)
 other_params_fun(draws=drawsOriginal)
 
 ```
+look at q_a values for comparison
+```{r}
+draws<-extract(real_fit)
+  q_a<-data.frame(draws$q_a)
+  names(q_a)<-anglerID$caughtBy
+
+  q_aLong<-q_a%>%
+    pivot_longer(cols=everything(), names_to="anglerID", values_to="q_a")
+
+  palette<-c("#78b98f", "#de0ca3", "#74ee65", "#69306e", "#59a20c", "#903be2", "#c0e15c",
+             "#891c1a", "#64d4fd", "#0a4f4e", "#e7ad79", "#1945c5", "#edb1ff", "#683d0d", "#fe707d",
+             "#445a06", "#4787c9", "#fbd127")
+
+  ggplot(q_aLong)+
+    geom_histogram(aes(x=q_a, fill=anglerID))+
+    geom_vline(xintercept=0, linetype="dashed")+
+    scale_fill_manual(values=palette)+
+    facet_wrap(.~anglerID, nrow=4, scales="free_x")+
+    theme_bw()
+
+```
+
 
 Next I'm going to get rid of the prior on PE, which I think is redundant
 
@@ -858,3 +878,93 @@ Forum post gets into it a little https://discourse.mc-stan.org/t/extending-the-i
 Responses suggest 'Doors and Corners' pre-print, which I need to finish reading
 
 If I can't cite a pre-print, it cites several peer-reviewed papers using this approach
+
+Post-meeting 5/10: 
+
+Trying student t distribution on log_mu_q parameters
+
+```{r}
+real_fit_student<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_student<-extract(real_fit_student)
+popDensity_fun(draws=draws_student)
+log_q_a_fun(draws=draws_student)
+log_q_l_fun(draws=draws_student)
+log_q_d_fun(draws=draws_student)
+other_params_fun(draws=draws_student)
+
+
+```
+Yeah, output is about the same. Slightly different shape on log_q_l distributions
+
+
+Reduced dataset
+
+```{r}
+data.join.red<-full.data%>%
+  filter(lakeID%in%fish_pe_recap$lakeID)%>%
+  left_join(fish_pe_recap, by="lakeID")%>%
+  filter(lakeID%in%recap_over_1$lakeID)
+
+fish_pe_recap_red<-filter(fish_pe_recap, lakeID%in%recap_over_1$lakeID)
+
+lakeID<-data.frame(lakeID=fish_pe_recap_red$lakeID,
+                   L=seq(1:10),
+                   sumCtMt=fish_pe_recap_red$sumCtMt,
+                   sumRt=fish_pe_recap_red$sumRt,
+                   surfaceArea=fish_pe_recap_red$surfaceArea)
+
+anglerID<-data.frame(caughtBy=unique(data.join.red$caughtBy),
+                     A=seq(1:16))
+
+dateID<-data.frame(date=unique(data.join.red$date),
+                   D=seq(1:30))
+
+data.indexed.red<-data.join.red%>%
+  left_join(dateID, by="date")%>%
+  left_join(anglerID, by="caughtBy")%>%
+  left_join(lakeID, by="lakeID")%>%
+  mutate(log_effort=log(effort))%>%
+  rename("lmbCatch"=nCaught)
+
+data.list.red<-list(N=nrow(data.indexed.red),
+                A=max(data.indexed.red$A),
+                D=max(data.indexed.red$D),
+                L=max(data.indexed.red$L),
+                AA=data.indexed.red$A,
+                DD=data.indexed.red$D,
+                LL=data.indexed.red$L,
+                lmbCatch=data.indexed.red$lmbCatch,
+                log_effort=data.indexed.red$log_effort,
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea)
+
+real_fit_reduced<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list.red,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+draws_reduced<-extract(real_fit_reduced)
+popDensity_fun(draws=draws_reduced)
+log_q_a_fun(draws=draws_reduced)
+log_q_l_fun(draws=draws_reduced)
+log_q_d_fun(draws=draws_reduced)
+other_params_fun(draws=draws_reduced)
+
+```
+
+No obvious differences--the shape of the beta posterior changed a little, and there are many fewer 2019 observations. 

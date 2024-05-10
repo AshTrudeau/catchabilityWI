@@ -1,5 +1,5 @@
 //
-// fitting nonlinear catch equation to fake data
+// fitting nonlinear catch equation largemouth bass catch rates
 
 data {
   // number of observations
@@ -32,19 +32,18 @@ data {
 
 parameters {
   // I want different estimates of q for different anglers, dates, and lakes, as well as an overall mean q
-  // without these zero lower bounds, initialization fails
 
   real log_q_mu;
   real<lower=0> beta;
   real<lower=0> phi;
   
-  real mu_q_a;
+  real log_mu_q_a;
   real<lower=0> sigma_q_a;
   
-  real mu_q_d;
+  real log_mu_q_d;
   real<lower=0> sigma_q_d;
   
-  real mu_q_l;
+  real log_mu_q_l;
   real<lower=0> sigma_q_l;
   
   array[A] real q_a_raw;
@@ -75,15 +74,16 @@ transformed parameters{
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
 
+// changing parameter names (mu_q_a, d, l) to make their distribution more clear. log_q_a is normally distributed around (log)mu_q_a
 
   for(a in 1:A){
-    log_q_a[a] = mu_q_a + sigma_q_a * q_a_raw[a];
+    log_q_a[a] = log_mu_q_a + sigma_q_a * q_a_raw[a];
   }
   for(d in 1:D){
-    log_q_d[d] = mu_q_d + sigma_q_d * q_d_raw[d];
+    log_q_d[d] = log_mu_q_d + sigma_q_d * q_d_raw[d];
   }
   for(l in 1:L){
-    log_q_l[l] = mu_q_l + sigma_q_l * q_l_raw[l];
+    log_q_l[l] = log_mu_q_l + sigma_q_l * q_l_raw[l];
   }
 
 for(i in 1:N){
@@ -98,7 +98,7 @@ for(i in 1:N){
 
 model {
   
-  target += lognormal_lpdf(PE | 0,3);
+  //target += lognormal_lpdf(PE | 0,3);
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
   target += lognormal_lpdf(popDensity | 0,2);
   
@@ -111,9 +111,9 @@ model {
   target += normal_lpdf(log_q_mu | 0,1);
 
 
-  target += normal_lpdf(mu_q_a | 0,1);
-  target += normal_lpdf(mu_q_d | 0,1);
-  target += normal_lpdf(mu_q_l | 0,1);
+  target += normal_lpdf(log_mu_q_a | 0,1);
+  target += normal_lpdf(log_mu_q_d | 0,1);
+  target += normal_lpdf(log_mu_q_l | 0,1);
   
 
   target += exponential_lpdf(sigma_q_a | 1);
@@ -129,6 +129,7 @@ model {
 }
 
 generated quantities{
+  
   vector[N] log_lik;
   array[N] real predictions;
   array[N] real diff;
@@ -151,5 +152,6 @@ generated quantities{
   resid_var=variance(diff);
   
   bayes_r2=variance(predictions)./(variance(predictions)+resid_var);
+  
 }
 
