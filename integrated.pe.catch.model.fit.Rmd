@@ -903,7 +903,7 @@ other_params_fun(draws=draws_student)
 
 
 ```
-Yeah, output is about the same. Slightly different shape on log_q_l distributions
+Yeah, output is about the same. Slightly different shape on log_q_l distributions. Variance is also wider on parameters
 
 
 Reduced dataset

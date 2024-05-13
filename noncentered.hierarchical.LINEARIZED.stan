@@ -109,12 +109,17 @@ model {
   target += std_normal_lpdf(q_l_raw);
   
   target += normal_lpdf(log_q_mu | 0,1);
+  //target += student_t_lpdf(log_q_mu |3, 0,1);
 
 
   target += normal_lpdf(log_mu_q_a | 0,1);
   target += normal_lpdf(log_mu_q_d | 0,1);
   target += normal_lpdf(log_mu_q_l | 0,1);
   
+  //target += student_t_lpdf(log_mu_q_a | 3,0,1);
+  //target += student_t_lpdf(log_mu_q_d | 3,0,1);
+  //target += student_t_lpdf(log_mu_q_l | 3,0,1);
+
 
   target += exponential_lpdf(sigma_q_a | 1);
   target += exponential_lpdf(sigma_q_d | 1);
