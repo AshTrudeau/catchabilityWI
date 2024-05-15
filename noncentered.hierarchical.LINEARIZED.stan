@@ -1,5 +1,6 @@
 //
 // fitting nonlinear catch equation largemouth bass catch rates
+// 5/15/24 made phi a vector length N--independent error dispersion by observation
 
 data {
   // number of observations
@@ -35,7 +36,7 @@ parameters {
 
   real log_q_mu;
   real<lower=0> beta;
-  real<lower=0> phi;
+  array[N] real<lower=0> phi;
   
   real log_mu_q_a;
   real<lower=0> sigma_q_a;

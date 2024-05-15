@@ -1,0 +1,523 @@
+---
+title: "variance partitioning"
+output: html_document
+date: "2024-05-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, fastDummies)
+```
+
+
+Data processing
+```{r}
+# raw catch data
+wd<-getwd()
+db.dir<-paste0(wd, "/MFEdb/")
+db<-"MFEdb_20220405.db"
+
+dbTableList(db.dir, db)
+
+lakes<-dbTable("lakes", fpath=db.dir, dbname=db)
+
+# lake data
+
+lakes.key<-lakes%>%
+  dplyr::select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
+# Found lake missing surface area--135.97 ha
+lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
+
+
+projects<-dbTable("projects", fpath=db.dir, dbname=db)
+
+fishSamples<-dbTable("fish_samples", fpath=db.dir, dbname=db)%>%
+  filter(projectID%in%c("37","38") & gear=="AN")
+
+fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
+  filter(sampleID%in%fishSamples$sampleID)%>%
+  filter(str_length(caughtBy)<4)%>%
+  mutate(caughtBy=str_trim(caughtBy))%>%
+  filter(otu=="largemouth_bass")%>%
+  dplyr::select(projectID:caughtBy, comments)%>%
+  # join fishing effort
+  left_join(fishSamples[,c("lakeID","sampleID","dayOfYear","dateSample","dateTimeSample","crew","effort","effortUnits","nAnglers")], by="sampleID")
+
+# catch rates for each angler trip, correcting for some ambiguous initials first
+
+ALK.lake.date<-c("LV_20190608",
+                 "SM_20190615",
+                 "WN_20190617",
+                 "BY_20190622")
+
+AMK.lake.date<-c("DS_20190613",
+                 "BOT_20190615",
+                 "SM_20190621",
+                 "BOT_20190624",
+                 "NH_20190713")
+
+long.crew<-fishSamples%>%
+  group_by(sampleID)%>%
+  summarize(crew=unique(crew),
+            effort=unique(effort))%>%
+  # split crew into columns and then pivot longer
+  separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
+  pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)%>%
+  mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))%>%
+  mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))%>%
+  mutate(caughtBy=ifelse(lakeID_date%in%AMK.lake.date, "AMK",
+                         ifelse(lakeID_date%in%ALK.lake.date, "ALK", caughtBy)))
+  
+ #long.crew$date<-NULL
+ #long.crew$lakeID<-NULL
+ #long.crew$lakeID_date<-NULL
+ 
+ 
+ all.data<-fishInfo%>%
+  mutate(year=year(dateSample))%>%
+  left_join(lakes.key, by="lakeID")
+  
+
+  
+# now get catch rates from angling data and left join to long.crew. empty values can then be replaced with 0
+
+cpue<-all.data%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(nCaught=n())
+
+
+
+full.data<-long.crew%>%
+  left_join(cpue, by=c("sampleID", "caughtBy"))%>%
+  mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))
+
+```
+code for processing mark recap data
+
+```{r}
+fish_samples<-dbTable("fish_samples", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(useSampleMarkRecap=="yes")
+
+# ok, we want to do projects 37 and 38 separately. 37 used AF (anal fin) tags, 38 used PIT tags
+fish_info<-dbTable("fish_info", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(sampleID%in%fish_samples$sampleID)%>%
+  filter(otu=="largemouth_bass")
+
+fish_data<-inner_join(fish_samples, fish_info, by="sampleID")%>%
+  mutate(lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         clipRecapture=as.numeric(clipRecapture),
+         clipRecapture=ifelse(is.na(clipRecapture),0,clipRecapture),
+         tagged=ifelse(clipApply=="AF", 1, 0))
+
+samples<-unique(fish_data$sampleID)
+
+lakes<-dbTable("lakes", fpath=db.dir)
+
+fish_samples<-data.frame(sampleID=unique(fish_data$sampleID))%>%
+  mutate(method=str_split_fixed(sampleID, "_", 6)[,5],
+         sampleDate=str_split_fixed(sampleID, "_", 4)[,3],
+         sampleTime=str_split_fixed(sampleID, "_", 5)[,4],
+         date_time=ymd_hm(paste(sampleDate, sampleTime, sep="_")),
+         # adjust sampleDates for night electrofishing--if method==BE and sampleTime is in the evening before midnight, add one day to date.
+         adjust=ifelse(method=="BE" & sampleTime<2359 & sampleTime>1200, 1, 0),
+         adj_sampleDate=as.character(ymd(sampleDate)+days(1)),
+         batchDate=ifelse(adjust==1, adj_sampleDate, as.character(ymd(sampleDate))),
+         batchDate_method=paste(batchDate, method, sep="_"))
+
+fish_pe<-left_join(fish_data, fish_samples[,c("sampleID","batchDate_method")], by="sampleID")%>%
+  group_by(lakeID, batchDate_method)%>%
+  summarize(markedNow=sum(tagged, na.rm=T),
+            recapturedNow=sum(clipRecapture))%>%
+  mutate(marked_cum=cumsum(markedNow),
+         markedPrior=lag(marked_cum),
+         markedPrior=ifelse(is.na(markedPrior), 0, markedPrior),
+         allFishCaught=markedNow+recapturedNow)%>%
+  ungroup()
+
+# let's filter to lakes that had at least 1 recapture
+
+recap_count<-fish_pe%>%
+  group_by(lakeID)%>%
+  summarize(nRecap=sum(recapturedNow))%>%
+  arrange(desc(nRecap))%>%
+  filter(nRecap>0)
+
+recap_over_1<-filter(recap_count, nRecap>1)
+
+# surface area for Found lake was missing. Got it from WI DNR (find a lake tool) and converted to hectares
+lakes[lakes$lakeID=="FD",]$surfaceArea<-136.0
+
+fish_pe_recap<-fish_pe%>%
+  filter(lakeID%in%recap_count$lakeID)%>%
+  mutate(CtMt=allFishCaught*markedPrior)%>%
+  group_by(lakeID)%>%
+  summarize(sumCtMt=sum(CtMt),
+            sumRt=sum(recapturedNow))%>%
+  ungroup()%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
+
+```
+
+Now join those datasets and index the unique lakeIDs and caughtBy initials
+
+```{r}
+data.join<-full.data%>%
+  filter(lakeID%in%fish_pe_recap$lakeID)%>%
+  left_join(fish_pe_recap, by="lakeID")
+
+
+lakeID<-data.frame(lakeID=fish_pe_recap$lakeID,
+                   L=seq(1:13),
+                   sumCtMt=fish_pe_recap$sumCtMt,
+                   sumRt=fish_pe_recap$sumRt,
+                   surfaceArea=fish_pe_recap$surfaceArea)
+
+anglerID<-data.frame(caughtBy=unique(data.join$caughtBy),
+                     A=seq(1:18))
+
+dateID<-data.frame(date=unique(data.join$date),
+                   D=seq(1:42))
+
+data.indexed<-data.join%>%
+  left_join(dateID, by="date")%>%
+  left_join(anglerID, by="caughtBy")%>%
+  left_join(lakeID[,c("lakeID","L")], by="lakeID")%>%
+  mutate(log_effort=log(effort))
+
+data.list<-list(N=nrow(data.indexed),
+                A=max(data.indexed$A),
+                D=max(data.indexed$D),
+                L=max(data.indexed$L),
+                AA=data.indexed$A,
+                DD=data.indexed$D,
+                LL=data.indexed$L,
+                lmbCatch=data.indexed$nCaught,
+                log_effort=data.indexed$log_effort,
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea)
+
+
+real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+launch_shinystan(real_fit)
+
+fit<-extract(real_fit)
+
+# making matrices of covariates and parameters
+
+# matrix of covariates, incl dummy variable random effects
+# there are 18 A values, 42 dates, and 13 lakes
+cov_df<-data.indexed%>%
+  dplyr::select(log_effort, surfaceArea, sumCtMt, sumRt, A, D, L)%>%
+  # I don't think this step is right, but I can revisit once I have a working version. popDensity isn't a point estimate, but actually another random parameter. Fornow, the column log_popDensity really has E(log_popDensity)
+  mutate(log_popDensity=log((sumCtMt/sumRt)/surfaceArea))%>%
+  mutate(across(A:L, as.character))%>%
+  dummy_cols(select_columns=c("A","D","L"))%>%
+  mutate_if(is.character, as.numeric)%>%
+  select(log_effort, log_popDensity, A_1:L_13)
+
+cov_matrix<-as.matrix(cov_df)
+
+#log_effort is a constant (but different by observation), so adding parameter of 1
+fixed_params_df<-data.frame(intercept=fit$log_q_mu,
+                         log_popDensity=fit$beta,
+                         log_effort=rep(1)
+                         )
+fixed_params_matrix<-as.matrix(fixed_params_df)
+
+random_params_list<-list(log_q_a=fit$log_q_a,
+                         log_q_d=fit$log_q_d,
+                         log_q_l=fit$log_q_l)
+
+log_q_a<-random_params_list$log_q_a
+colnames(log_q_a)<-paste("A", unique(data.list$AA), sep="_")
+
+log_q_d<-random_params_list$log_q_d
+colnames(log_q_d)<-paste("D", unique(data.list$DD), sep="_")
+
+log_q_l<-random_params_list$log_q_l
+colnames(log_q_l)<-paste("L", unique(data.list$LL), sep="_")
+
+random_params_matrix<-cbind(log_q_a, log_q_d, log_q_l)
+
+#residuals<-fit$diff
+
+all_params_matrix<-cbind(fixed_params_matrix[,-1], random_params_matrix)
+
+lmbCatch<-data.indexed$nCaught
+# defining groups of parameters and auxiliary constants
+# log_q_mu is an intercept term (same for all observations), so it's left out
+groups<-list(
+  # effort is a constant, but can assign a beta of 1
+  log_effort="log_effort",
+  log_popDensity="log_popDensity",
+  anglerID="A",
+  dateID="D",
+  lakeID="L",
+  residuals="residuals"
+)
+
+linear_terms<-unname(unlist(groups))
+
+n_lt<-length(linear_terms)  
+n_group<-length(groups)
+n_iter<-nrow(all_params_matrix)
+
+```
+
+Now adapt functions from programming supplement to construct the linear terms matrix--for fixed effecst, multiplying the matrix of covariates (design matrix) by a diagonal matrix of parameter values/regression weights
+
+```{r}
+params<-all_params_matrix
+X<-cov_matrix
+y<-lmbCatch
+
+colnames_x<-colnames(X)
+colnames_re_x<-colnames_x[3:75]
+
+param_names<-colnames(all_params_matrix)
+
+dimnames(X)<-list(n=seq(1:205),
+                  parameters=param_names)
+dimnames(params)<-list(iterations=seq(1:8000),
+                       parameters=param_names)
+```
+
+```{r}
+
+# X refers to cov_matrix, params to all_params_matrix, y to lmbCatch
+
+
+construct_lin_term_mat<-function(params, X, y){
+  
+  # linear terms for fishing effort and population density
+  X_cov<-X[,c("log_effort","log_popDensity")]
+  
+  A_cov<-as.matrix(X_cov %*% Diagonal(x=params[colnames(X_cov)]))
+  colnames(A_cov)<-colnames(X_cov)
+  
+  # linear terms for angler, date, and lake random effects. Adapt example the code to include a separate X_iid column for each random intercept (A, D, and L)
+  X_A_iid<-X[,grepl("A_", names(params))]
+  X_D_iid<-X[,grepl("D_", names(params))]
+  X_L_iid<-X[,grepl("L_", names(params))]
+  
+  A_A_iid<-X_A_iid%*%params[colnames(X_A_iid)]
+  A_D_iid<-X_D_iid%*%params[colnames(X_D_iid)]
+  A_L_iid<-X_L_iid%*%params[colnames(X_L_iid)]
+  
+  A_iid<-cbind(A_A_iid, A_D_iid, A_L_iid)
+  colnames(A_iid)<-c("A","D","L")
+
+  A<-cbind(A_cov, A_iid)
+  
+  # linear term for residuals
+  A<-cbind(A, residuals=y-exp(rowSums(A)))
+  
+  return(as.matrix(A))
+}
+
+
+# construct sample covariance matrix of linear terms, and it calls in the previous function
+
+# troubleshooting--give this function 1 row of params
+
+
+lin_term_cov <- function(params, X, y) {
+  
+  A <- construct_lin_term_mat(params, X, y)
+  
+  A <- A[,linear_terms]
+  K <- cov(A)
+  dimnames(K) <- list(colnames(A), colnames(A))
+  
+  return(K)
+}
+
+
+K <- apply(params, 'iterations', lin_term_cov, X, y)
+
+
+dim(K) <- c(n_lt, n_lt, n_iter)
+dimnames(K) <- list(rows = linear_terms, cols = linear_terms, iterations = NULL)
+```
+
+Ok, now I finally have K (posterior distributionof sample covariance matrixof thelinear terms)
+
+Next is applying varaince of dependent variable as normalizing term (normalizing the variance partitions)
+
+```{r}
+V_x<-apply(K, 'iterations', diag) / var(y)
+dimnames(V_x) <- list(variance = linear_terms, iterations = NULL)
+```
+
+This doesn't look right
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Before applying this to my 'real' data, I'm going to follow along with a tutorial by Torsti Schultz, 'Doors and corners of variance partitioning'
+
+```{r}
+library(rstanarm)
+library(Matrix)
+
+dat<-read.delim(here::here("example_scripts_variance_part","ECOG-04799","data","survey_data.tsv"), na.strings='NULL')
+
+sample_patches <- c(
+4, 6, 29, 41, 278, 503, 511, 875, 954, 975
+)
+prediction_patches <- c(
+1051, 1071, 1183, 1189, 1377, 1387, 1642, 1674, 9563, 9668
+)
+dat <- dat[dat$year < 2010,]
+dat$vegetation <- pmax(dat$plantago, dat$veronica)
+
+dat_pred <- dat[dat$patch %in% prediction_patches,]
+dat <- dat[dat$patch %in% sample_patches,]
+
+dat$growth_rate <- dat$population / dat$previous_population
+fit <- stan_lmer(
+log(growth_rate) ~
+log1p(vegetation) + grazing_presence + (1|year) + previous_population,
+dat
+)
+
+```
+
+Get predictors and response. This is process for GLM where response is linear (for calculating residuals)
+```{r}
+X <- fit$x
+X <- X[,!grepl('_NEW', colnames(X))]
+y <- fit$y
+```
+
+Now need parameter samples (theta) from posterior
+
+```{r}
+params <- as.matrix(fit)
+#colnames(params)<-dimnames(params)$parameters
+```
+
+this is 4000 draws from posterior of 17 parameters
+
+For groups of linear terms, need to define grouping
+
+(I might do this as fish populations vs. everything else once I have partitioning for individual covars)
+
+```{r}
+groups <- list(
+habitat_quality = c('log1p(vegetation)', 'grazing_presence'),
+density_dependence = c('previous_population'),
+year = 'year',
+residuals = 'residuals'
+)
+linear_terms <- unname(unlist(groups))
+
+```
+
+Auxiliary constants for the number oflinearterms, number of groups, number of posterior samples
+
+```{r}
+n_lt <- length(linear_terms)
+n_group <- length(groups)
+n_iter <- nrow(params)
+
+```
+
+Multiply corresponding design matrix columns with by a diagonal matrix of regression weights (to get linear terms)
+as written, th is works with only one draw from the posterior. Need to iterate for other draws
+
+```{r}
+
+construct_lin_term_mat <- function(params, X, y) {
+## Linear terms for the growth rate and density dependence
+X_cov <- X[, !grepl('(Intercept)', colnames(X), fixed = TRUE)]
+A_cov <- as.matrix(X_cov %*% Diagonal(x = params[colnames(X_cov)]))
+colnames(A_cov) <- colnames(X_cov)
+## Linear term for the yearly random effect
+X_iid <- X[,grep('b[(Intercept)', colnames(X), fixed = TRUE)]
+A_iid <- X_iid %*% params[colnames(X_iid)]
+colnames(A_iid) <- c('year')
+A <- cbind(A_cov, A_iid)
+## Linear term for residuals (omiting the intercept above does not affect variance)
+A <- cbind(A, residuals = y - rowSums(A))
+return(as.matrix(A))
+}
+
+# construct sample covariance matrix of linear terms. The previous function is called in the next function to avoid storing a (huge) matrix of linear terms
+
+lin_term_cov <- function(params, X, y) {
+A <- construct_lin_term_mat(params, X, y)
+A <- A[,linear_terms]
+K <- cov(A)
+dimnames(K) <- list(colnames(A), colnames(A))
+return(K)
+}
+
+K <- apply(params, 'iterations', lin_term_cov, X, y)
+
+
+
+dim(K) <- c(n_lt, n_lt, n_iter)
+dimnames(K) <- list(rows = linear_terms, cols = linear_terms, iterations = NULL)
+
+# normalizing term--normalize variance partitions using variance of dependent variable y
+V_x <- apply(K, 'iterations', diag) / var(y)
+dimnames(V_x) <- list(variance = linear_terms, iterations = NULL)
+
+# calculate covariacne matrix for groups of linear terms
+
+B <- sapply(groups, function(x) { as.integer(linear_terms %in% x) })
+dimnames(B) <- list(linear_terms = linear_terms, groups = colnames(B))
+
+K_B <- apply(K, 'iterations', function(x, B) { t(B) %*% x %*% B }, B)
+dim(K_B) <- c(n_group, n_group, n_iter)
+
+dimnames(K_B) <- list(rows = names(groups), cols = names(groups), iterations = NULL)
+V_b <- apply(K_B, 'iterations', diag) / var(y)
+dimnames(V_b) <- list(variance = names(groups), iterations = NULL)
+
+# diagonal variance partition
+P_b <- apply(K_B, 'iterations', function(x) {diag(x) / sum(diag(x))})
+dimnames(P_b) <- list(variance = names(groups), iterations = NULL)
+
+# marginal variance partition
+M_b <- apply(K_B, 'iterations', rowSums) / var(y)
+dimnames(M_b) <- list(variance = names(groups), iterations = NULL)
+
+unique_variance <- function(K, idx) {
+U <- sum(K[idx,idx] - K[idx,!idx] %*% solve(K[!idx,!idx]) %*% K[!idx,idx])
+}
+unique_variances <- function(K, B) {
+U <- apply(B, 'groups', function(x, K) { unique_variance(K, x == 1 )}, K)
+}
+U_b <- apply(K, 'iterations', unique_variances, B) / var(y)
+dimnames(U_b) <- list(variance = names(groups), iterations = NULL)
+```
+
+Important difference: for nonlinear models, the normalizing term is the variance of the linear predictor eta, which is different for each posterior sample. (unlike this example, which has one value of var(y))
