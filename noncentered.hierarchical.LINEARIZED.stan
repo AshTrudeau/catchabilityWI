@@ -54,12 +54,15 @@ parameters {
   
   // angler effect
   real<lower=0> sigma_q_a;
+  real log_mu_q_a;
   
   // date effect
   real<lower=0> sigma_q_d;
+  real log_mu_q_d;
   
   //waterbody/lake effect
   real<lower=0> sigma_q_l;
+  real log_mu_q_l;
   
   // for noncentered parameterization
   array[A] real q_a_raw;
@@ -92,13 +95,13 @@ transformed parameters{
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
   for(a in 1:A){
-    log_q_a[a] =sigma_q_a * q_a_raw[a];
+    log_q_a[a] =log_mu_q_a + sigma_q_a * q_a_raw[a];
   }
   for(d in 1:D){
-    log_q_d[d] = sigma_q_d * q_d_raw[d];
+    log_q_d[d] = log_mu_q_d + sigma_q_d * q_d_raw[d];
   }
   for(l in 1:L){
-    log_q_l[l] =sigma_q_l * q_l_raw[l];
+    log_q_l[l] = log_mu_q_l + sigma_q_l * q_l_raw[l];
   }
 
 for(i in 1:N){
@@ -128,9 +131,9 @@ model {
   //target += student_t_lpdf(log_q_mu |3, 0,1);
 
 
-  //target += normal_lpdf(log_mu_q_a | 0,1);
-  //target += normal_lpdf(log_mu_q_d | 0,1);
-  //target += normal_lpdf(log_mu_q_l | 0,1);
+  target += normal_lpdf(log_mu_q_a | 0,1);
+  target += normal_lpdf(log_mu_q_d | 0,1);
+  target += normal_lpdf(log_mu_q_l | 0,1);
   
 
   target += exponential_lpdf(sigma_q_a | 1);
@@ -181,7 +184,7 @@ generated quantities{
   // log_effort is an offset, not really a fixed effect
   
   for(n in 1:N){
-    predictions_fixed_only[n] = exp(log_effort[n] +log_q_mu + beta*log_popDensity[LL[n]]);
+    predictions_fixed_only[n] = exp(log_effort[n] +log_q_mu + log_mu_q_a +log_mu_q_d + log_mu_q_l +beta*log_popDensity[LL[n]]);
   }
   
 
@@ -222,6 +225,7 @@ generated quantities{
   real<lower=0> vpc_d;
   real<lower=0> vpc_l;
   //real<lower=0> vpc_marg;
+  
 
 
   mean_log_popDensity = mean(log_popDensity);
@@ -229,22 +233,22 @@ generated quantities{
 
 
   for (i in 1:1000){
-   sim_log_q_a[i]= normal_rng(0, sigma_q_a);
-   sim_log_q_d[i]= normal_rng(0, sigma_q_d);
-   sim_log_q_l[i]= normal_rng(0, sigma_q_l);
+   sim_log_q_a[i]= normal_rng(log_mu_q_a, sigma_q_a);
+   sim_log_q_d[i]= normal_rng(log_mu_q_d, sigma_q_d);
+   sim_log_q_l[i]= normal_rng(log_mu_q_l, sigma_q_l);
   }
   
-  
+   
+
   // compute catchHatStar values
-  // log_q_a, d, l, location params (mu) are now folded into log_q_mu
-  
+
  
   
   for(i in 1:1000){
     catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*mean_log_popDensity); // simulate all of the random intercepts
-    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + beta*mean_log_popDensity); // simulate one random intercept at a time
-    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + sim_log_q_d[i] + beta*mean_log_popDensity);
-    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + sim_log_q_l[i] + beta*mean_log_popDensity);
+    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*mean_log_popDensity); // simulate one random intercept at a time
+    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*mean_log_popDensity);
+    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*mean_log_popDensity);
     // only fixed effects
     // ah, no, this doesn't work (with this simulation method anyway) because the array put out by the following function has var =0 
     //catchHatStar_marg[i] = exp(mean_log_effort + beta*mean_log_popDensity);

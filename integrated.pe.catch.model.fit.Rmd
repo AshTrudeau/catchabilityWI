@@ -332,10 +332,20 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
 launch_shinystan(real_fit)
 
 
-  
-
+# troubleshooting divergent transitions problem
+# first, is it somehow caused by all the generated quantities I added?
+# partially. But adding back log_mu_q_a/d/l fixed it entirely. Now r2_fixed is messed up (5/30)
+test_fit<-stan(file="test_version.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
 ```
-
+Yes, putting back the log_mu_q_a/d/l stopped the divergent transitions for some reason. but now the r2 and vpc estimates are all messed up
 Let's start looking at the draws to start interpreting parameter values (and making pretty graphs)
 
 ```{r}
