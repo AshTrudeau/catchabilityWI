@@ -147,10 +147,18 @@ generated quantities{
   
   vector[N] log_lik;
   array[N] real predictions;
+  array[N] real predictions_fixed_only;
+
+
   array[N] real diff;
   real resid_var;
+  real pred_var;
   real bayes_r2;
-  
+  real pred_fixed_var;
+
+  real fixed_r2;
+  real prop_unexp;
+
   
   for(n in 1:N){
     log_lik[n] = neg_binomial_2_log_lpmf(lmbCatch[n] | log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]], phi);
@@ -165,49 +173,62 @@ generated quantities{
   }
 
   resid_var=variance(diff);
+  pred_var = variance(predictions);
   
-  bayes_r2=variance(predictions)./(variance(predictions)+resid_var);
+  bayes_r2=pred_var/(pred_var+resid_var);
   
-  // partitioning variance
+  // variance explained by random/fixed effects only
+  // log_effort is an offset, not really a fixed effect
   
-  // wow, this takes way too long and it's also wrong,I think. Removing other parameters, only trying VPC of q_a for now
+  for(n in 1:N){
+    predictions_fixed_only[n] = exp(log_effort[n] +log_q_mu + beta*log_popDensity[LL[n]]);
+  }
   
-  // for each draw, simulate 1000 values for residuals associated with grouping
-  // reducing to 10 to test quick run before consult
+
+
+  pred_fixed_var = variance(predictions_fixed_only);
+
+  fixed_r2 = (pred_var - pred_fixed_var)/(pred_var+resid_var);
+  prop_unexp = resid_var/(pred_var + resid_var);
   
-  array[100] real sim_log_q_a;
-  array[100] real sim_log_q_d;
-  array[100] real sim_log_q_l;
+  // part r2 from Stoffel et al 2021. using full and reduced predictions rather than fitting separate full and reduced models
+
+  // partitioning variance explained by random effects
+  
+
+  array[1000] real sim_log_q_a;
+  array[1000] real sim_log_q_d;
+  array[1000] real sim_log_q_l;
 
   real mean_log_popDensity;
   real mean_log_effort;
 
-  array[100] real catchHatStar_a;
-  array[100] real catchHatStar_d;
-  array[100] real catchHatStar_l;
-  array[100] real catchHatStar_all;
-  array[100] real catchHatStar_marg;
+  array[1000] real catchHatStar_a;
+  array[1000] real catchHatStar_d;
+  array[1000] real catchHatStar_l;
+  array[1000] real catchHatStar_all;
+  //array[1000] real catchHatStar_marg;
 
-  array[100] real var_catchHatStar_all;
+  array[1000] real var_catchHatStar_all;
   real expect_v1_all;
   
   real var2_catchHatStar_a;
   real var2_catchHatStar_d;
   real var2_catchHatStar_l;
   real var2_catchHatStar_all;
-  real var2_catchHatStar_marg;
+  //real var2_catchHatStar_marg;
 
   real<lower=0> vpc_a;
   real<lower=0> vpc_d;
   real<lower=0> vpc_l;
-  real<lower=0> vpc_marg;
+  //real<lower=0> vpc_marg;
 
 
   mean_log_popDensity = mean(log_popDensity);
   mean_log_effort = mean(log_effort);
 
 
-  for (i in 1:100){
+  for (i in 1:1000){
    sim_log_q_a[i]= normal_rng(0, sigma_q_a);
    sim_log_q_d[i]= normal_rng(0, sigma_q_d);
    sim_log_q_l[i]= normal_rng(0, sigma_q_l);
@@ -215,21 +236,21 @@ generated quantities{
   
   
   // compute catchHatStar values
-  // log_q_a, d, l, location params are now folded into log_q_mu, so I don't need them to estimate catchHatStar_all. (they all have mean set to zero)
+  // log_q_a, d, l, location params (mu) are now folded into log_q_mu
   
  
   
-  for(i in 1:100){
+  for(i in 1:1000){
     catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*mean_log_popDensity); // simulate all of the random intercepts
     catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + beta*mean_log_popDensity); // simulate one random intercept at a time
     catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + sim_log_q_d[i] + beta*mean_log_popDensity);
     catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + sim_log_q_l[i] + beta*mean_log_popDensity);
     // only fixed effects
     // ah, no, this doesn't work (with this simulation method anyway) because the array put out by the following function has var =0 
-    catchHatStar_marg[i] = exp(mean_log_effort + beta*mean_log_popDensity);
+    //catchHatStar_marg[i] = exp(mean_log_effort + beta*mean_log_popDensity);
   }
   
-  for(i in 1:100){
+  for(i in 1:1000){
         //level 1 variance
     var_catchHatStar_all[i] = catchHatStar_all[i] + ((catchHatStar_all[i]^2) / phi);
 
@@ -239,14 +260,14 @@ generated quantities{
     var2_catchHatStar_d = variance(catchHatStar_d);
     var2_catchHatStar_l = variance(catchHatStar_l);
     var2_catchHatStar_all = variance(catchHatStar_all);
-    var2_catchHatStar_marg = variance(catchHatStar_marg);
+    //var2_catchHatStar_marg = variance(catchHatStar_marg);
     
     expect_v1_all = mean(var_catchHatStar_all);
     
     vpc_a = var2_catchHatStar_a/(var2_catchHatStar_all + expect_v1_all);
     vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all);
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
-    vpc_marg = var2_catchHatStar_marg/(var2_catchHatStar_all + expect_v1_all);
+    //vpc_marg = var2_catchHatStar_marg/(var2_catchHatStar_all + expect_v1_all);
   
 
   
