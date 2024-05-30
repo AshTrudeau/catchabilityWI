@@ -326,7 +326,7 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
-                 iter=3000,
+                 iter=2000,
                  cores=4,
                  refresh=0)
 launch_shinystan(real_fit)

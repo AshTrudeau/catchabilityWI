@@ -217,12 +217,17 @@ fit<-extract(real_fit)
 
 # making matrices of covariates and parameters
 
+# log_popDensity is kind of a special case where it is both a parameter and a covariate. I'm getting some odd results, which might be caused by this. 
+
 # matrix of covariates, incl dummy variable random effects
 # there are 18 A values, 42 dates, and 13 lakes
 cov_df<-data.indexed%>%
   dplyr::select(log_effort, surfaceArea, sumCtMt, sumRt, A, D, L)%>%
   # I don't think this step is right, but I can revisit once I have a working version. popDensity isn't a point estimate, but actually another random parameter. Fornow, the column log_popDensity really has E(log_popDensity)
-  mutate(log_popDensity=log((sumCtMt/sumRt)/surfaceArea))%>%
+  
+  # trying something different--this 'covariate' is just 1, and I'll multiply beta draws by log_popDensity draws for the log_popDensity parameter and treat the covariate below like an offset
+  #mutate(log_popDensity=log((sumCtMt/sumRt)/surfaceArea))%>%
+  mutate(log_popDensity=rep(1))%>%
   mutate(across(A:L, as.character))%>%
   dummy_cols(select_columns=c("A","D","L"))%>%
   mutate_if(is.character, as.numeric)%>%
@@ -230,10 +235,17 @@ cov_df<-data.indexed%>%
 
 cov_matrix<-as.matrix(cov_df)
 
+# reshape log_popDensity estimates so I can multiply them by beta
+
+log_popDensity_estimates<-fit$log_popDensity
+colnames(log_popDensity_estimates)<-lakeID$lakeID
+
+lakeIDOrder<-data.indexed$lakeID
+
 #log_effort is a constant (but different by observation), so adding parameter of 1
 fixed_params_df<-data.frame(intercept=fit$log_q_mu,
-                         log_popDensity=fit$beta,
-                         log_effort=rep(1)
+                            log_effort=rep(1),
+                            log_popDensity=fit$beta*fit$log_popDensity
                          )
 fixed_params_matrix<-as.matrix(fixed_params_df)
 
@@ -257,6 +269,10 @@ random_params_matrix<-cbind(log_q_a, log_q_d, log_q_l)
 all_params_matrix<-cbind(fixed_params_matrix[,-1], random_params_matrix)
 
 lmbCatch<-data.indexed$nCaught
+
+logCatchHat<-fit$logCatchHat
+
+y<-logCatchHat
 # defining groups of parameters and auxiliary constants
 # log_q_mu is an intercept term (same for all observations), so it's left out
 groups<-list(
@@ -265,8 +281,8 @@ groups<-list(
   log_popDensity="log_popDensity",
   anglerID="A",
   dateID="D",
-  lakeID="L",
-  residuals="residuals"
+  lakeID="L"
+  #residuals="residuals"
 )
 
 linear_terms<-unname(unlist(groups))
@@ -282,7 +298,7 @@ Now adapt functions from programming supplement to construct the linear terms ma
 ```{r}
 params<-all_params_matrix
 X<-cov_matrix
-y<-lmbCatch
+#y<-lmbCatch
 
 colnames_x<-colnames(X)
 colnames_re_x<-colnames_x[3:75]
@@ -323,7 +339,8 @@ construct_lin_term_mat<-function(params, X, y){
   A<-cbind(A_cov, A_iid)
   
   # linear term for residuals
-  A<-cbind(A, residuals=y-exp(rowSums(A)))
+  # can't include this because I have count data with zeroes
+ # A<-cbind(A, residuals=y-exp(rowSums(A)))
   
   return(as.matrix(A))
 }
@@ -358,11 +375,24 @@ Ok, now I finally have K (posterior distributionof sample covariance matrixof th
 Next is applying varaince of dependent variable as normalizing term (normalizing the variance partitions)
 
 ```{r}
-V_x<-apply(K, 'iterations', diag) / var(y)
+
+V_x<-apply(K, 'iterations', diag) / apply(y, 'iterations', var)
 dimnames(V_x) <- list(variance = linear_terms, iterations = NULL)
+
+
+dim.1.K<-K[,,1]
+diagK<-diag(dim.1.K)
+
+row.1.y<-y[1,]
+var.y<-var(row.1.y)
+
+diagK/var.y
 ```
 
-This doesn't look right
+This still doesn't look right. It's possible this is not working correctly because I am mistreating log_popDensity, w hich is both a param and a covariate. Simulation-based method may be best
+
+https://onlinelibrary-wiley-com.ezproxy.library.wisc.edu/doi/10.1002/sim.7532 
+Austin et al 2018, statistics in medicine, cited by Leckie paper
 
 
 
@@ -521,3 +551,29 @@ dimnames(U_b) <- list(variance = names(groups), iterations = NULL)
 ```
 
 Important difference: for nonlinear models, the normalizing term is the variance of the linear predictor eta, which is different for each posterior sample. (unlike this example, which has one value of var(y))
+
+I'm going to need to adapt it to suit HMC method of draws
+
+This isn't working out. Try simulation method
+1. I've written this in the generated quantities block of noncentered.hierarchical.LINEARIZED.stan. First I'm looking for VPC of all random effects (if that's something I can even do)
+
+
+
+```{r}
+real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=2000,
+                 cores=4,
+                 refresh=0)
+
+fit<-extract(real_fit)
+launch_shinystan(real_fit)
+
+
+
+```
+holy shit that took a long time. Looking at the vpc distribuutions, I really need to constrain their values. The min and max values are whack
