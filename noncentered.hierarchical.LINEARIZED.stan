@@ -1,7 +1,7 @@
 //
 // fitting nonlinear catch equation largemouth bass catch rates
 
-// 5/15/24 made phi a vector length N--independent error by observation
+
 
 // This model estimates bass population density using mark recapture data from 13 lakes. 
 // These estimates are then used as predictors in the catch equation, catch = effort * catchability * population density^beta, 
@@ -128,6 +128,7 @@ for(i in 1:N){
 model {
   
   //for population estimate, Poisson approximation of hypergeometric distribution
+  //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
   target += lognormal_lpdf(popDensity | 0,2);
   
@@ -138,6 +139,7 @@ model {
   target += std_normal_lpdf(q_l_raw);
   
   target += normal_lpdf(log_q_mu | 0,1);
+  // testing sensitivity of priors
   //target += student_t_lpdf(log_q_mu |3, 0,1);
 
 
@@ -160,7 +162,9 @@ generated quantities{
   
   vector[N] log_lik;
   array[N] real predictions_all;
-  array[N] real predictions_fixed_only;
+  array[N] real predictions_no_popDensity;
+  array[N] real predictions_fixed;
+  array[N] real predictions_random;
   array[P] real predictions_aslo;
 
 
@@ -168,10 +172,13 @@ generated quantities{
   real resid_var;
   real pred_var;
   real<lower=0> bayes_r2;
-  real pred_fixed_var;
-// model has problems if I put a loser limit on fixed_r2 (undefined values for log_lik)
-  real fixed_r2;
+  real pred_var_no_popDensity;
+  real pred_var_fixed;
+  real pred_var_random;
+// model has problems if I put a looser limit on fixed_r2 (undefined values for log_lik)
+  real part_r2_popDensity;
   real prop_unexp;
+  //real lmbCatch_var;
 
   
   for(n in 1:N){
@@ -185,6 +192,7 @@ generated quantities{
   for(p in 1:P){
     predictions_aslo[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
   }
+
   
   for(n in 1:N){
     diff[n] = predictions_all[n] - lmbCatch[n];
@@ -192,22 +200,35 @@ generated quantities{
 
   resid_var=variance(diff);
   pred_var = variance(predictions_all);
-  
+  // Gelman et al 2019, American statistician
   bayes_r2=pred_var/(pred_var+resid_var);
   
   // variance explained by random/fixed effects only
   // log_effort is an offset, not really a fixed effect
   
   for(n in 1:N){
-    predictions_fixed_only[n] = exp(log_effort[n] +log_q_mu + log_mu_q_a +log_mu_q_d + log_mu_q_l +beta*log_popDensity[LL[n]]);
+    predictions_no_popDensity[n] = exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]]);
   }
   
+  for(n in 1:N){
+    predictions_fixed[n] = exp(log_effort[n] + beta * log_popDensity[LL[n]]);
+  }
+  
+  for(n in 1:N){
+    predictions_random[n] = exp(log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]]);
+  }
+
+// part r2 stands for semi-partial coefficients of determination
+// Stoffel et al 2021 got me started, but didn't h ave a method (usable to me) for GLMMs. They cited Jaeger et al 2016, so checking that now
+
+  pred_var_no_popDensity = variance(predictions_no_popDensity);
+  pred_var_fixed = variance(predictions_fixed);
+  pred_var_random = variance(predictions_random);
 
 
-  pred_fixed_var = variance(predictions_fixed_only);
-
-  fixed_r2 = (pred_var - pred_fixed_var)/(pred_var+resid_var);
-  prop_unexp = resid_var/(pred_var + resid_var);
+  
+  part_r2_popDensity = (pred_var-pred_var_no_popDensity)/(pred_var_fixed + pred_var_fixed +resid_var);
+  prop_unexp = resid_var/(pred_var_fixed + pred_var_fixed +resid_var);
   
   // part r2 from Stoffel et al 2021. using full and reduced predictions rather than fitting separate full and reduced models
 
