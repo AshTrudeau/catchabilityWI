@@ -21,6 +21,9 @@ data {
   int<lower=1> D;
   // number of lakes (13)
   int<lower=1> L; 
+    // number of predictions
+  int<lower=1> P;
+
   
   // all observations of catch (response)
   array[N] int<lower=0> lmbCatch;
@@ -37,6 +40,12 @@ data {
   vector[L] sumCtMt;
   vector[L] surfaceArea;
   int sumRt[L];
+  
+  array[P] int<lower=1, upper=L> lakeID_pred;
+  array[P] int<lower=1, upper=A> anglerID_pred;
+  array[P] int<lower=1, upper=D> dateID_pred;
+  array[P] real effort_pred;
+
   
 }
 
@@ -94,6 +103,7 @@ transformed parameters{
   log_popDensity = log(popDensity);
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
+// update: divergent transitions problem when I did that; they've been put back in
   for(a in 1:A){
     log_q_a[a] =log_mu_q_a + sigma_q_a * q_a_raw[a];
   }
@@ -149,16 +159,17 @@ model {
 generated quantities{
   
   vector[N] log_lik;
-  array[N] real predictions;
+  array[N] real predictions_all;
   array[N] real predictions_fixed_only;
+  array[P] real predictions_aslo;
 
 
   array[N] real diff;
   real resid_var;
   real pred_var;
-  real bayes_r2;
+  real<lower=0> bayes_r2;
   real pred_fixed_var;
-
+// model has problems if I put a loser limit on fixed_r2 (undefined values for log_lik)
   real fixed_r2;
   real prop_unexp;
 
@@ -168,15 +179,19 @@ generated quantities{
   }
   
   for(n in 1:N){
-    predictions[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
+    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
+  }
+  
+  for(p in 1:P){
+    predictions_aslo[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
   }
   
   for(n in 1:N){
-    diff[n] = predictions[n] - lmbCatch[n];
+    diff[n] = predictions_all[n] - lmbCatch[n];
   }
 
   resid_var=variance(diff);
-  pred_var = variance(predictions);
+  pred_var = variance(predictions_all);
   
   bayes_r2=pred_var/(pred_var+resid_var);
   
@@ -273,8 +288,5 @@ generated quantities{
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
     //vpc_marg = var2_catchHatStar_marg/(var2_catchHatStar_all + expect_v1_all);
   
-
-  
-
 }
 

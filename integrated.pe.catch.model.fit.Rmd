@@ -442,6 +442,9 @@ other_params_fun<-function(draws){
   names(beta)<-"beta"
   log_q_mu<-data.frame(draws$log_q_mu)
   names(log_q_mu)<-"log_q_mu"
+  log_mu_q_a
+  log_mu_q_d
+  log_mu_q_l
 
   betaPlot<-ggplot(beta)+
     geom_density(aes(x=beta), fill="lightblue")+
@@ -457,6 +460,12 @@ other_params_fun<-function(draws){
     geom_density(aes(x=log_q_mu), fill="lightblue")+
     geom_vline(xintercept=0, linetype="dashed")+
     theme_bw()
+  
+  aMuPlot
+  
+  dMuPlot
+  
+  lMuPlot
 
   
   plot_grid(betaPlot, phiPlot, muPlot)
@@ -480,6 +489,13 @@ log_q_d_fun(draws=drawsOriginal)
 other_params_fun(draws=drawsOriginal)
 
 ```
+```{r}
+ggplot(drawsOriginal)+
+  geom_density(aes(x=fixed_r2))
+```
+
+
+
 look at q_a values for comparison
 ```{r}
 draws<-extract(real_fit)
