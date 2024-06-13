@@ -162,22 +162,25 @@ generated quantities{
   
   vector[N] log_lik;
   array[N] real predictions_all;
+  array[N] real predictions_all_link;
   array[N] real predictions_no_popDensity;
-  array[N] real predictions_fixed;
   array[N] real predictions_random;
-  array[P] real predictions_aslo;
+  array[N] real predictions_fixed;
+  array[P] real predictions_plot;
 
 
   array[N] real diff;
   real resid_var;
   real pred_var;
+  real pred_var_link;
   real<lower=0> bayes_r2;
+  real<lower=0> glmm_r2;
   real pred_var_no_popDensity;
-  real pred_var_fixed;
   real pred_var_random;
-// model has problems if I put a looser limit on fixed_r2 (undefined values for log_lik)
+  real pred_var_fixed;
   real part_r2_popDensity;
-  real prop_unexp;
+  real prediction_b0;
+  real lambda;
   //real lmbCatch_var;
 
   
@@ -189,48 +192,62 @@ generated quantities{
     predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
   }
   
+  for(n in 1:N){
+    predictions_all_link[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]];
+  }
+  // for plot predicting catch rates across pop densities
   for(p in 1:P){
-    predictions_aslo[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
+    predictions_plot[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
   }
 
+  // log_effort is an offset, not really a fixed effect
+  // all of these are in the link/latent scale for r2 estimates
   
+  for(n in 1:N){
+    predictions_no_popDensity[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]];
+  }
+  
+  // I think the problems earlier were caused by me forgetting log_mu_q_a, d, l
+  for(n in 1:N){
+    predictions_fixed[n] = log_effort[n] + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l + beta*log_popDensity[LL[n]];
+  }
+  
+  for(n in 1:N){
+    predictions_random[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]];
+  }
+  
+  prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
+
+  // for Bayes r2 (Gelman et al 2019)
+  // check on this, I probably did it wrong
   for(n in 1:N){
     diff[n] = predictions_all[n] - lmbCatch[n];
   }
 
   resid_var=variance(diff);
   pred_var = variance(predictions_all);
+  pred_var_link = variance(predictions_all_link);
+  pred_var_no_popDensity = variance(predictions_no_popDensity);
+  pred_var_random = variance(predictions_random);
+  pred_var_fixed = variance(predictions_fixed);
+  
+  lambda = exp(prediction_b0 + 0.5*pred_var_random);
+
+  
   // Gelman et al 2019, American statistician
+  // these are on the observation scale
   bayes_r2=pred_var/(pred_var+resid_var);
   
-  // variance explained by random/fixed effects only
-  // log_effort is an offset, not really a fixed effect
+  // Nakagawa et al 2017, royal society, most useful paper ever
+    glmm_r2=pred_var_fixed/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + log(1+(1/lambda)+(1/phi)));
   
-  for(n in 1:N){
-    predictions_no_popDensity[n] = exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]]);
-  }
-  
-  for(n in 1:N){
-    predictions_fixed[n] = exp(log_effort[n] + beta * log_popDensity[LL[n]]);
-  }
-  
-  for(n in 1:N){
-    predictions_random[n] = exp(log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]]);
-  }
 
 // part r2 stands for semi-partial coefficients of determination
 // Stoffel et al 2021 got me started, but didn't h ave a method (usable to me) for GLMMs. They cited Jaeger et al 2016, so checking that now
+  // both of these are on the link scale
+  part_r2_popDensity = (pred_var_link-pred_var_no_popDensity)/(pred_var_link + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2  + log(1+(1/lambda)+(1/phi)));
 
-  pred_var_no_popDensity = variance(predictions_no_popDensity);
-  pred_var_fixed = variance(predictions_fixed);
-  pred_var_random = variance(predictions_random);
-
-
-  
-  part_r2_popDensity = (pred_var-pred_var_no_popDensity)/(pred_var_fixed + pred_var_fixed +resid_var);
-  prop_unexp = resid_var/(pred_var_fixed + pred_var_fixed +resid_var);
-  
-  // part r2 from Stoffel et al 2021. using full and reduced predictions rather than fitting separate full and reduced models
+  // part r2 adapted from Stoffel et al 2021 and Nakagawa et al 2017. May want a statistician to check this
 
   // partitioning variance explained by random effects
   
@@ -279,7 +296,6 @@ generated quantities{
   // compute catchHatStar values
 
  
-  
   for(i in 1:1000){
     catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*mean_log_popDensity); // simulate all of the random intercepts
     catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*mean_log_popDensity); // simulate one random intercept at a time

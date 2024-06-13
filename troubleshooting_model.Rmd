@@ -233,7 +233,7 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
-                 iter=2000,
+                 iter=3000,
                  cores=4,
                  refresh=0)
 launch_shinystan(real_fit)
@@ -244,20 +244,25 @@ draws<-extract(real_fit)
 Making charts
 
 ```{r}
-part_var<-data.frame(part_r2_popDensity=draws$part_r2_popDensity,
+part_var<-data.frame(glmm_r2=draws$glmm_r2,
+                     bayes_r2=draws$bayes_r2,
+                     part_r2_popDensity=draws$part_r2_popDensity,
                      vpc_a=draws$vpc_a,
                      vpc_d=draws$vpc_d,
                      vpc_l=draws$vpc_l)
+
+ggplot(part_var)+
+  geom_density(aes(x=bayes_r2))+
+  theme_bw()
+ggplot(part_var)+
+  geom_density(aes(x=glmm_r2))+
+  theme_bw()
 
 ggplot(part_var)+
   geom_density(aes(x=part_r2_popDensity), fill="purple")+
   theme_bw()
 # model run problems if I bound lower limit at 0
 
-ggplot(part_var)+
-  geom_density(aes(x=fixed_r2), fill="purple")+
-  xlim(0,1)+
-  theme_bw()
 
 angler<-ggplot(part_var)+
   geom_density(aes(x=vpc_a), fill="orange")+
@@ -282,4 +287,27 @@ library(cowplot)
 plot_grid(angler, day, lake, nrow=1)
 
 ```
+Look at predictions
 
+```{r}
+predictions_all<-colMeans(draws$predictions_all)
+predictions_all_link<-colMeans(draws$predictions_all_link)
+predictions_fixed<-colMeans(draws$predictions_fixed)
+predictions_random<-colMeans(draws$predictions_random)
+prediction_no_popDensity<-colMeans(draws$predictions_no_popDensity)
+
+pred.df<-data.frame(pred_all=predictions_all,
+                    pred_fixed=predictions_fixed,
+                    pred_random=predictions_random,
+                    pred_all_link=predictions_all_link,
+                    prediction_no_popDensity=prediction_no_popDensity)
+
+ggplot(pred.df)+
+  geom_histogram(aes(x=pred_all_link))+
+  geom_histogram(aes(x=pred_fixed), fill="red", alpha=0.4)+
+  geom_histogram(aes(x=pred_random), fill="blue", alpha=0.4)+
+  theme_bw()
+            
+```
+
+Predictions with fixed effects only have huuuge variance. It doesn't make sense to use only fixed effects here. 
