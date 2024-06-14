@@ -272,13 +272,11 @@ generated quantities{
   real var2_catchHatStar_d;
   real var2_catchHatStar_l;
   real var2_catchHatStar_all;
-  //real var2_catchHatStar_marg;
 
   real<lower=0> vpc_a;
   real<lower=0> vpc_d;
   real<lower=0> vpc_l;
-  //real<lower=0> vpc_marg;
-  
+
 
 
   mean_log_popDensity = mean(log_popDensity);
