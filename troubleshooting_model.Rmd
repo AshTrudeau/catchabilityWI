@@ -248,6 +248,11 @@ Making charts
 
 ```{r}
 part_var<-data.frame(glmm_r2=draws$glmm_r2,
+                     fixed_r2=draws$fixed_r2,
+                     ICC_adj=draws$ICC_adj,
+                     ICC_adj_a=draws$ICC_adj_a,
+                     ICC_adj_d=draws$ICC_adj_d,
+                     ICC_adj_l=draws$ICC_adj_l,
                      part_r2_popDensity=draws$part_r2_popDensity,
                      vpc_a=draws$vpc_a,
                      vpc_d=draws$vpc_d,
@@ -256,6 +261,26 @@ part_var<-data.frame(glmm_r2=draws$glmm_r2,
 ggplot(part_var)+
   geom_density(aes(x=glmm_r2))+
   theme_bw()
+
+ggplot(part_var)+
+  geom_density(aes(x=fixed_r2))+
+  theme_bw()
+
+ggplot(part_var)+
+  geom_density(aes(x=ICC_adj))+
+  theme_bw()
+
+ggplot(part_var)+
+  geom_density(aes(x=ICC_adj_a))+
+  theme_bw()
+ggplot(part_var)+
+  geom_density(aes(x=ICC_adj_d))+
+  theme_bw()
+ggplot(part_var)+
+  geom_density(aes(x=ICC_adj_l))+
+  theme_bw()
+
+
 
 ggplot(part_var)+
   geom_density(aes(x=part_r2_popDensity), fill="purple")+

@@ -164,7 +164,7 @@ generated quantities{
   array[N] real predictions_all;
   array[N] real predictions_all_link;
   array[N] real predictions_no_popDensity;
-  array[N] real predictions_random;
+  //array[N] real predictions_random;
   array[N] real predictions_fixed;
   array[P] real predictions_plot;
 
@@ -176,11 +176,16 @@ generated quantities{
   //real<lower=0> bayes_r2;
   real<lower=0> glmm_r2;
   real pred_var_no_popDensity;
-  real pred_var_random;
+ // real pred_var_random;
   real pred_var_fixed;
   real part_r2_popDensity;
   real prediction_b0;
   real lambda;
+  real ICC_adj;
+  real ICC_adj_a;
+  real ICC_adj_d;
+  real ICC_adj_l;
+  real fixed_r2;
   //real lmbCatch_var;
 
   
@@ -208,13 +213,14 @@ generated quantities{
   }
   
   // I think the problems earlier were caused by me forgetting log_mu_q_a, d, l
+  // but looking back at Nakagawa et al2017, I really dont think the intercepts are supposedto be there? (though I don't see why it would matter)
   for(n in 1:N){
-    predictions_fixed[n] = log_effort[n] + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l + beta*log_popDensity[LL[n]];
+    predictions_fixed[n] = log_effort[n] + beta*log_popDensity[LL[n]];
   }
   
-  for(n in 1:N){
-    predictions_random[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]];
-  }
+ // for(n in 1:N){
+   // predictions_random[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]];
+  //}
   
   prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
 
@@ -228,10 +234,10 @@ generated quantities{
   pred_var = variance(predictions_all);
   pred_var_link = variance(predictions_all_link);
   pred_var_no_popDensity = variance(predictions_no_popDensity);
-  pred_var_random = variance(predictions_random);
+  //pred_var_random = variance(predictions_random);
   pred_var_fixed = variance(predictions_fixed);
   
-  lambda = exp(prediction_b0 + 0.5*pred_var_random);
+  lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2));
 
   
   // Gelman et al 2019, American statistician
@@ -240,7 +246,7 @@ generated quantities{
   
   // Nakagawa et al 2017, royal society, most useful paper ever
   glmm_r2=(pred_var_fixed + sigma_q_a^2+sigma_q_d^2+sigma_q_l^2)/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + trigamma(((1/lambda)+(1/phi))^-1));
-  
+  fixed_r2=(pred_var_fixed)/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + trigamma(((1/lambda)+(1/phi))^-1));
 
 // part r2 stands for semi-partial coefficients of determination
 // Stoffel et al 2021 got me started, but didn't h ave a method (usable to me) for GLMMs. They cited Jaeger et al 2016, so checking that now
@@ -250,7 +256,14 @@ generated quantities{
   // part r2 adapted from Stoffel et al 2021 and Nakagawa et al 2017. May want a statistician to check this
 
   // partitioning variance explained by random effects
+  //ICC
+  ICC_adj = (sigma_q_a^2+sigma_q_d^2+sigma_q_l^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
   
+  ICC_adj_a = (sigma_q_a^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
+  ICC_adj_d = (sigma_q_d^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
+  ICC_adj_l = (sigma_q_l^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
+  
+  //VPC simulation method
 
   array[1000] real sim_log_q_a;
   array[1000] real sim_log_q_d;
