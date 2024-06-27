@@ -160,7 +160,7 @@ model {
 
 generated quantities{
   
-  vector[N] log_lik;
+ // vector[N] log_lik;
   array[N] real predictions_all;
   array[N] real predictions_all_link;
   array[N] real predictions_no_popDensity;
@@ -169,11 +169,11 @@ generated quantities{
   array[P] real predictions_plot;
 
 
-  array[N] real diff;
-  real resid_var;
+  //array[N] real diff;
+ // real resid_var;
   real pred_var;
   real pred_var_link;
-  real<lower=0> bayes_r2;
+  //real<lower=0> bayes_r2;
   real<lower=0> glmm_r2;
   real pred_var_no_popDensity;
   real pred_var_random;
@@ -184,9 +184,9 @@ generated quantities{
   //real lmbCatch_var;
 
   
-  for(n in 1:N){
-    log_lik[n] = neg_binomial_2_log_lpmf(lmbCatch[n] | log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]], phi);
-  }
+  //for(n in 1:N){
+    //log_lik[n] = neg_binomial_2_log_lpmf(lmbCatch[n] | log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]], phi);
+  //}
   
   for(n in 1:N){
     predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
@@ -220,11 +220,11 @@ generated quantities{
 
   // for Bayes r2 (Gelman et al 2019)
   // check on this, I probably did it wrong
-  for(n in 1:N){
-    diff[n] = predictions_all[n] - lmbCatch[n];
-  }
+  //for(n in 1:N){
+  //  diff[n] = predictions_all[n] - lmbCatch[n];
+ // }
 
-  resid_var=variance(diff);
+ // resid_var=variance(diff);
   pred_var = variance(predictions_all);
   pred_var_link = variance(predictions_all_link);
   pred_var_no_popDensity = variance(predictions_no_popDensity);
@@ -236,16 +236,16 @@ generated quantities{
   
   // Gelman et al 2019, American statistician
   // these are on the observation scale
-  bayes_r2=pred_var/(pred_var+resid_var);
+  //bayes_r2=pred_var/(pred_var+resid_var);
   
   // Nakagawa et al 2017, royal society, most useful paper ever
-    glmm_r2=pred_var_fixed/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + log(1+(1/lambda)+(1/phi)));
+  glmm_r2=(pred_var_fixed + sigma_q_a^2+sigma_q_d^2+sigma_q_l^2)/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + trigamma(((1/lambda)+(1/phi))^-1));
   
 
 // part r2 stands for semi-partial coefficients of determination
 // Stoffel et al 2021 got me started, but didn't h ave a method (usable to me) for GLMMs. They cited Jaeger et al 2016, so checking that now
   // both of these are on the link scale
-  part_r2_popDensity = (pred_var_link-pred_var_no_popDensity)/(pred_var_link + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2  + log(1+(1/lambda)+(1/phi)));
+  part_r2_popDensity = (pred_var_link-pred_var_no_popDensity)/(pred_var_link + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2  + trigamma(((1/lambda)+(1/phi))^-1));
 
   // part r2 adapted from Stoffel et al 2021 and Nakagawa et al 2017. May want a statistician to check this
 

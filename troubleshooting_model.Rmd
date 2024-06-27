@@ -21,6 +21,9 @@ db<-"MFEdb_20220405.db"
 dbTableList(db.dir, db)
 
 lakes<-dbTable("lakes", fpath=db.dir, dbname=db)
+#crew<-dbTable("crew", fpath=db.dir, dbname=db)%>%
+#  filter(year%in%c("2018","2019"))
+#write.csv(crew, "crew.csv")
 
 # lake data
 
@@ -236,7 +239,7 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  iter=3000,
                  cores=4,
                  refresh=0)
-launch_shinystan(real_fit)
+#launch_shinystan(real_fit)
 
 draws<-extract(real_fit)
 
@@ -245,15 +248,11 @@ Making charts
 
 ```{r}
 part_var<-data.frame(glmm_r2=draws$glmm_r2,
-                     bayes_r2=draws$bayes_r2,
                      part_r2_popDensity=draws$part_r2_popDensity,
                      vpc_a=draws$vpc_a,
                      vpc_d=draws$vpc_d,
                      vpc_l=draws$vpc_l)
 
-ggplot(part_var)+
-  geom_density(aes(x=bayes_r2))+
-  theme_bw()
 ggplot(part_var)+
   geom_density(aes(x=glmm_r2))+
   theme_bw()
