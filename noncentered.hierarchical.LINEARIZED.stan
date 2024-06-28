@@ -263,7 +263,7 @@ generated quantities{
   ICC_adj_d = (sigma_q_d^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
   ICC_adj_l = (sigma_q_l^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
   
-  //VPC simulation method
+  //VPC simulation method--on data scale, but not confident about how I treated population density
 
   array[1000] real sim_log_q_a;
   array[1000] real sim_log_q_d;
