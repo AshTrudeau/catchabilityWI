@@ -254,6 +254,7 @@ part_var<-data.frame(glmm_r2=draws$glmm_r2,
                      ICC_adj_d=draws$ICC_adj_d,
                      ICC_adj_l=draws$ICC_adj_l,
                      part_r2_popDensity=draws$part_r2_popDensity,
+                     r2_rough_count=draws$r2_rough_count,
                      vpc_a=draws$vpc_a,
                      vpc_d=draws$vpc_d,
                      vpc_l=draws$vpc_l)
@@ -264,6 +265,10 @@ ggplot(part_var)+
 
 ggplot(part_var)+
   geom_density(aes(x=fixed_r2))+
+  theme_bw()
+
+ggplot(part_var)+
+  geom_density(aes(x=r2_rough_count))+
   theme_bw()
 
 ggplot(part_var)+
@@ -311,6 +316,180 @@ library(cowplot)
 plot_grid(angler, day, lake, nrow=1)
 
 ```
+
+What happens if I use a different lake? Lake of the Hills this time (lake 7)
+
+```{r}
+real_fit_lh<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+#launch_shinystan(real_fit)
+
+draws_lh<-extract(real_fit_lh)
+
+
+```
+
+
+```{r}
+part_var_lh<-data.frame(glmm_r2=draws_lh$glmm_r2,
+                     fixed_r2=draws_lh$fixed_r2,
+                     ICC_adj=draws_lh$ICC_adj,
+                     ICC_adj_a=draws_lh$ICC_adj_a,
+                     ICC_adj_d=draws_lh$ICC_adj_d,
+                     ICC_adj_l=draws_lh$ICC_adj_l,
+                     part_r2_popDensity=draws_lh$part_r2_popDensity,
+                     vpc_a=draws_lh$vpc_a,
+                     vpc_d=draws_lh$vpc_d,
+                     vpc_l=draws_lh$vpc_l)
+
+ggplot(part_var_lh)+
+  geom_density(aes(x=glmm_r2))+
+  theme_bw()
+
+ggplot(part_var_lh)+
+  geom_density(aes(x=fixed_r2))+
+  theme_bw()
+
+ggplot(part_var_lh)+
+  geom_density(aes(x=ICC_adj))+
+  theme_bw()
+
+ggplot(part_var_lh)+
+  geom_density(aes(x=ICC_adj_a))+
+  theme_bw()
+ggplot(part_var_lh)+
+  geom_density(aes(x=ICC_adj_d))+
+  theme_bw()
+ggplot(part_var_lh)+
+  geom_density(aes(x=ICC_adj_l))+
+  theme_bw()
+
+
+
+ggplot(part_var_lh)+
+  geom_density(aes(x=part_r2_popDensity), fill="purple")+
+  theme_bw()
+# model run problems if I bound lower limit at 0
+
+
+angler<-ggplot(part_var_lh)+
+  geom_density(aes(x=vpc_a), fill="orange")+
+  ggtitle("Angler VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+day<-ggplot(part_var_lh)+
+  geom_density(aes(x=vpc_d), fill="yellow")+
+  ggtitle("Date VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+lake<-ggplot(part_var_lh)+
+  geom_density(aes(x=vpc_l), fill="blue")+
+  ggtitle("Lake VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+library(cowplot)
+
+plot_grid(angler, day, lake, nrow=1)
+
+```
+
+and White Birch (lake 11)?
+```{r}
+real_fit_wb<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+#launch_shinystan(real_fit)
+
+draws_wb<-extract(real_fit_wb)
+
+```
+
+
+```{r}
+part_var_wb<-data.frame(glmm_r2=draws_wb$glmm_r2,
+                     fixed_r2=draws_wb$fixed_r2,
+                     ICC_adj=draws_wb$ICC_adj,
+                     ICC_adj_a=draws_wb$ICC_adj_a,
+                     ICC_adj_d=draws_wb$ICC_adj_d,
+                     ICC_adj_l=draws_wb$ICC_adj_l,
+                     part_r2_popDensity=draws_wb$part_r2_popDensity,
+                     vpc_a=draws_wb$vpc_a,
+                     vpc_d=draws_wb$vpc_d,
+                     vpc_l=draws_wb$vpc_l)
+
+ggplot(part_var_wb)+
+  geom_density(aes(x=glmm_r2))+
+  theme_bw()
+
+ggplot(part_var_wb)+
+  geom_density(aes(x=fixed_r2))+
+  theme_bw()
+
+ggplot(part_var_wb)+
+  geom_density(aes(x=ICC_adj))+
+  theme_bw()
+
+ggplot(part_var_wb)+
+  geom_density(aes(x=ICC_adj_a))+
+  theme_bw()
+ggplot(part_var_wb)+
+  geom_density(aes(x=ICC_adj_d))+
+  theme_bw()
+ggplot(part_var_wb)+
+  geom_density(aes(x=ICC_adj_l))+
+  theme_bw()
+
+
+
+ggplot(part_var_wb)+
+  geom_density(aes(x=part_r2_popDensity), fill="purple")+
+  theme_bw()
+# model run problems if I bound lower limit at 0
+
+
+angler<-ggplot(part_var_wb)+
+  geom_density(aes(x=vpc_a), fill="orange")+
+  ggtitle("Angler VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+day<-ggplot(part_var_wb)+
+  geom_density(aes(x=vpc_d), fill="yellow")+
+  ggtitle("Date VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+lake<-ggplot(part_var_wb)+
+  geom_density(aes(x=vpc_l), fill="blue")+
+  ggtitle("Lake VPC")+
+  xlim(0,1)+
+  theme_bw()
+
+library(cowplot)
+
+plot_grid(angler, day, lake, nrow=1)
+
+
+```
+
+
+
 Look at predictions
 
 ```{r}

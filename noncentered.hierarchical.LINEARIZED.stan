@@ -166,6 +166,7 @@ generated quantities{
   array[N] real predictions_no_popDensity;
   //array[N] real predictions_random;
   array[N] real predictions_fixed;
+  array[N] real predictions_fixed_count;
   array[P] real predictions_plot;
 
 
@@ -218,6 +219,7 @@ generated quantities{
     predictions_fixed[n] = log_effort[n] + beta*log_popDensity[LL[n]];
   }
   
+
  // for(n in 1:N){
    // predictions_random[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]];
   //}
@@ -236,6 +238,7 @@ generated quantities{
   pred_var_no_popDensity = variance(predictions_no_popDensity);
   //pred_var_random = variance(predictions_random);
   pred_var_fixed = variance(predictions_fixed);
+  pred_var_fixed_count = variance(predictions_fixed_count);
   
   lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2));
 
@@ -263,13 +266,14 @@ generated quantities{
   ICC_adj_d = (sigma_q_d^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
   ICC_adj_l = (sigma_q_l^2)/(sigma_q_a^2+sigma_q_d^2+sigma_q_l^2+trigamma(((1/lambda)+(1/phi))^-1));
   
+
   //VPC simulation method--on data scale, but not confident about how I treated population density
 
   array[1000] real sim_log_q_a;
   array[1000] real sim_log_q_d;
   array[1000] real sim_log_q_l;
 
-  real mean_log_popDensity;
+  //real mean_log_popDensity;
   real mean_log_effort;
 
   array[1000] real catchHatStar_a;
@@ -292,7 +296,7 @@ generated quantities{
 
 
 
-  mean_log_popDensity = mean(log_popDensity);
+ // mean_log_popDensity = mean(log_popDensity);
   mean_log_effort = mean(log_effort);
 
 
@@ -308,10 +312,10 @@ generated quantities{
 
  
   for(i in 1:1000){
-    catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*mean_log_popDensity); // simulate all of the random intercepts
-    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*mean_log_popDensity); // simulate one random intercept at a time
-    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*mean_log_popDensity);
-    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*mean_log_popDensity);
+    catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*log_popDensity[5]); // simulate all of the random intercepts
+    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity[5]); // simulate one random intercept at a time
+    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*log_popDensity[5]);
+    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*log_popDensity[5]);
     // only fixed effects
     // ah, no, this doesn't work (with this simulation method anyway) because the array put out by the following function has var =0 
     //catchHatStar_marg[i] = exp(mean_log_effort + beta*mean_log_popDensity);
@@ -335,6 +339,7 @@ generated quantities{
     vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all);
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
     //vpc_marg = var2_catchHatStar_marg/(var2_catchHatStar_all + expect_v1_all);
-  
+    
+
 }
 
