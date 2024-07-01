@@ -46,7 +46,15 @@ data {
   array[P] int<lower=1, upper=D> dateID_pred;
   array[P] real effort_pred;
 
+  vector[D] avg_air_temp_sc;
+  vector[D] avg_wind_speed_sc;
+  vector[D] avg_barom_pres_mbar_sc;
+  vector[D] avg_par_sc;
+  vector[D] precip_sc;
+  vector[D] illum_sc;
   
+
+
 }
 
 
@@ -80,12 +88,22 @@ parameters {
   // population estimate
   vector<lower=0>[L] PE;
 
+  real b_temp;
+  real b_wind;
+  real b_barom;
+  real b_par;
+  real b_precip;
+  real b_illum;
+  
+  real<lower=0> sigma_log_mu_q_d;
 
 }
 
 transformed parameters{
   // log link prediction
   array[N] real logCatchHat;
+  array[D] real expect_log_mu_q_d;
+
   
   array[A] real log_q_a;
   array[D] real log_q_d;
@@ -116,6 +134,9 @@ for(i in 1:N){
   logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
 }
 
+    for(d in 1:D){
+      log_q_d[d] = b_temp*avg_air_temp_sc[d] + b_wind*avg_wind_speed_sc[d] + b_barom*avg_barom_pres_mbar_sc[d] + b_par*avg_par_sc[d] + b_precip*precip_sc[d] + b_illum*illum_sc[d];
+    }
 
 }
 
@@ -150,6 +171,14 @@ model {
 
   target += lognormal_lpdf(beta | -1,1);
   
+    b_temp~normal(0,1);
+    b_wind~normal(0,1);
+    b_barom~normal(0,1);
+    b_par~normal(0,1);
+    b_precip~normal(0,1);
+    b_illum~normal(0,1);
+
+  
 }
 
 generated quantities{
@@ -179,6 +208,7 @@ generated quantities{
   real ICC_adj_d;
   real ICC_adj_l;
   real fixed_r2;
+  
 
   
   for(n in 1:N){
@@ -305,6 +335,7 @@ generated quantities{
     vpc_a = var2_catchHatStar_a/(var2_catchHatStar_all + expect_v1_all);
     vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all);
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
+    
 
 
 }

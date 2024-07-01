@@ -1,15 +1,18 @@
 ---
-title: "troubleshooting_model"
+title: "add_secondary_analysis"
 output: html_document
-date: "2024-06-11"
+date: "2024-07-01"
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, lavaan, lunar, PerformanceAnalytics)
 ```
 
 Pull raw data from MFE database
+
+Looking again at the metadata, I may have made an error on effort--it's effort in angler-hours, and I don't know if I divided it by nAnglers to get effort per angler
+
 ```{r}
 rm(list=ls())
 
@@ -37,9 +40,8 @@ projects<-dbTable("projects", fpath=db.dir, dbname=db)
 
 fishSamples<-dbTable("fish_samples", fpath=db.dir, dbname=db)%>%
   filter(projectID%in%c("37") & gear=="AN")%>%
-    mutate(nAnglers=as.numeric(nAnglers),
+  mutate(nAnglers=as.numeric(nAnglers),
     effort=effort/nAnglers)
-
 
 fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
   filter(sampleID%in%fishSamples$sampleID)%>%
@@ -179,7 +181,8 @@ Now join those datasets and index the unique lakeIDs and caughtBy initials
 ```{r}
 data.join<-full.data%>%
   filter(lakeID%in%fish_pe_recap$lakeID)%>%
-  left_join(fish_pe_recap, by="lakeID")
+  left_join(fish_pe_recap, by="lakeID")%>%
+  mutate(date=ymd(date))
 
 
 lakeID<-data.frame(lakeID=fish_pe_recap$lakeID,
@@ -206,6 +209,77 @@ data.indexed<-data.join%>%
 lakeID_pred = rep(lakeID$L, 18)
 anglerID_pred = rep(anglerID$A, each=13)
 dateID_pred = rep(17, 234)
+```
+
+Adding weather and (incomplete) angler data for secondary analysis
+```{r}
+anglerData<-read_csv(here::here("data","angler_secondary_data_manual_clean.csv"))
+# why are the column names weird? oh well
+# oops duplicates that's why
+#names(anglerData)<-str_replace_all(names(anglerData), "\\.\\.\\.\\d+", "")
+
+likert.key<-c("Strongly disagree"=1,
+              "Somewhat disagree"=2,
+              "Neither agree nor disagree" =3,
+              "Somewhat agree"=4,
+              "Strongly agree"=5)
+
+cfa.mod<-'centrality= ~lifeRevolves+mostEnjoyable+noTime+nothingElse'
+
+anglerData_mod<-anglerData%>%
+  mutate(across(lifeRevolves:specialGear, ~recode(.x, !!!likert.key)),
+         daysFishedPast_sc=scale(daysFishedPast, center=T, scale=T))
+
+cfa.fit<-cfa(cfa.mod, data=anglerData_mod)
+summary(cfa.fit, fit.measures=TRUE)
+
+scores<-lavPredict(cfa.fit)
+scores<-unname(as.matrix(scores))
+
+anglerData_mod$centrality<-scores
+
+names(anglerData_mod)[24]<-"centrality"
+```
+Removed low-estimate indicators until CFI and TLI were acceptable
+days fished wasn't a good predictor. The small sample size is also not great
+
+weather data
+
+```{r}
+data.indexed$date<-ymd(data.indexed$date)
+
+woodruff<-read_csv(here::here("data","ntl17_1_v19_woodruff.csv"))
+minocqua<-read_csv(here::here("data","ntl18_v9_minocqua.csv"))
+
+woodruff_mod<-woodruff%>%
+  select(sampledate, avg_air_temp, avg_wind_speed, avg_barom_pres_mbar, avg_par)%>%
+  mutate(sampledate=mdy(sampledate))%>%
+  filter(year(sampledate)%in%c("2018","2019"))
+
+minocqua_mod<-minocqua%>%
+  select(sampledate, precip)%>%
+  mutate(sampledate=mdy(sampledate))%>%
+  filter(year(sampledate)%in%c("2018","2019"))
+
+weather<-woodruff_mod%>%
+  left_join(minocqua_mod, by="sampledate")%>%
+  filter(sampledate%in%data.indexed$date)%>%
+  # now I'm going to scale all of these values
+  mutate(across(avg_air_temp:precip, ~scale(.x, center=T, scale=T)))
+
+names(weather)[2:6]<-paste0(names(weather)[2:6], "_sc")
+names(weather)[1]<-"date"
+
+weather_moon<-weather%>%
+  mutate(illum_sc=scale(lunar.illumination.mean(date), center=T, scale=T))
+
+
+data.indexed.weather<-data.indexed%>%
+  left_join(weather_moon, by="date")
+```
+added photosynthetically active radiation and phase of moon
+
+```{r}
 
 data.list<-list(N=nrow(data.indexed),
                 A=max(data.indexed$A),
@@ -223,8 +297,16 @@ data.list<-list(N=nrow(data.indexed),
                 lakeID_pred=lakeID_pred,
                 anglerID_pred=anglerID_pred,
                 dateID_pred=dateID_pred,
-                effort_pred = rep(log(4), 234)
-                )
+                effort_pred = rep(log(4), 234))
+                # centrality=anglerData_mod$centrality,
+                # daysFished_sc=anglerData_mod$daysFishedPast_sc,
+                # avg_air_temp_sc=as.vector(weather_moon$avg_air_temp_sc),
+                # avg_wind_speed_sc=as.vector(weather_moon$avg_wind_speed_sc),
+                # avg_barom_pres_mbar_sc=as.vector(weather_moon$avg_barom_pres_mbar_sc),
+                # avg_par_sc=as.vector(weather_moon$avg_par_sc),
+                # precip_sc=as.vector(weather_moon$precip_sc),
+                # illum_sc=as.vector(weather_moon$illum_sc)
+                #)
 
 pred_df<-data.frame(lakeID=lakeID_pred,
                     anglerID=anglerID_pred,
@@ -247,6 +329,9 @@ real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
 draws<-extract(real_fit)
 
 ```
+
+Visualizing results
+
 Making charts
 
 ```{r}
@@ -257,7 +342,6 @@ part_var<-data.frame(glmm_r2=draws$glmm_r2,
                      ICC_adj_d=draws$ICC_adj_d,
                      ICC_adj_l=draws$ICC_adj_l,
                      part_r2_popDensity=draws$part_r2_popDensity,
-                     r2_rough_count=draws$r2_rough_count,
                      vpc_a=draws$vpc_a,
                      vpc_d=draws$vpc_d,
                      vpc_l=draws$vpc_l)
@@ -270,9 +354,6 @@ ggplot(part_var)+
   geom_density(aes(x=fixed_r2))+
   theme_bw()
 
-ggplot(part_var)+
-  geom_density(aes(x=r2_rough_count))+
-  theme_bw()
 
 ggplot(part_var)+
   geom_density(aes(x=ICC_adj))+
@@ -320,230 +401,115 @@ plot_grid(angler, day, lake, nrow=1)
 
 ```
 
-What happens if I use a different lake? Lake of the Hills this time (lake 7)
+
+
+
+I'm not sure that's going to work integrated into the model..
 
 ```{r}
-real_fit_lh<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
-                 data=data.list,
-                 #init=hier.inits,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-#launch_shinystan(real_fit)
+dateEffect<-draws$log_q_d
 
-draws_lh<-extract(real_fit_lh)
+dateEffectMean<-colMeans(dateEffect)
+dateEffectSD<-apply(dateEffect, 2, sd)
 
+weather_moon$meanEffect<-dateEffectMean
+weather_moon$sdEffect<-dateEffectSD
+
+weather_effect<-weather_moon%>%
+  mutate(upperCI=meanEffect+1.96*sdEffect,
+         lowerCI=meanEffect-1.96*sdEffect)
+
+
+
+ggplot(weather_effect)+
+  geom_point(aes(x=date, y=meanEffect))+
+  geom_errorbar(aes(x=date, y=meanEffect, ymin=lowerCI, ymax=upperCI))
 
 ```
 
+oof, those are WIDE
 
 ```{r}
-part_var_lh<-data.frame(glmm_r2=draws_lh$glmm_r2,
-                     fixed_r2=draws_lh$fixed_r2,
-                     ICC_adj=draws_lh$ICC_adj,
-                     ICC_adj_a=draws_lh$ICC_adj_a,
-                     ICC_adj_d=draws_lh$ICC_adj_d,
-                     ICC_adj_l=draws_lh$ICC_adj_l,
-                     part_r2_popDensity=draws_lh$part_r2_popDensity,
-                     vpc_a=draws_lh$vpc_a,
-                     vpc_d=draws_lh$vpc_d,
-                     vpc_l=draws_lh$vpc_l)
+chart.Correlation(weather_effect[,c(2:8)])
 
-ggplot(part_var_lh)+
-  geom_density(aes(x=glmm_r2))+
-  theme_bw()
-
-ggplot(part_var_lh)+
-  geom_density(aes(x=fixed_r2))+
-  theme_bw()
-
-ggplot(part_var_lh)+
-  geom_density(aes(x=ICC_adj))+
-  theme_bw()
-
-ggplot(part_var_lh)+
-  geom_density(aes(x=ICC_adj_a))+
-  theme_bw()
-ggplot(part_var_lh)+
-  geom_density(aes(x=ICC_adj_d))+
-  theme_bw()
-ggplot(part_var_lh)+
-  geom_density(aes(x=ICC_adj_l))+
-  theme_bw()
-
-
-
-ggplot(part_var_lh)+
-  geom_density(aes(x=part_r2_popDensity), fill="purple")+
-  theme_bw()
-# model run problems if I bound lower limit at 0
-
-
-angler<-ggplot(part_var_lh)+
-  geom_density(aes(x=vpc_a), fill="orange")+
-  ggtitle("Angler VPC")+
-  xlim(0,1)+
-  theme_bw()
-
-day<-ggplot(part_var_lh)+
-  geom_density(aes(x=vpc_d), fill="yellow")+
-  ggtitle("Date VPC")+
-  xlim(0,1)+
-  theme_bw()
-
-lake<-ggplot(part_var_lh)+
-  geom_density(aes(x=vpc_l), fill="blue")+
-  ggtitle("Lake VPC")+
-  xlim(0,1)+
-  theme_bw()
-
-library(cowplot)
-
-plot_grid(angler, day, lake, nrow=1)
-
-```
-
-and White Birch (lake 11)?
-```{r}
-real_fit_wb<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
-                 data=data.list,
-                 #init=hier.inits,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-#launch_shinystan(real_fit)
-
-draws_wb<-extract(real_fit_wb)
-
+weather_mod<-lm(meanEffect~avg_air_temp_sc+avg_wind_speed_sc+avg_barom_pres_mbar_sc+avg_par_sc+precip_sc+illum_sc, data=weather_effect)
+plot(weather_mod)
+summary(weather_mod)
 ```
 
 
+Angler effects?
+
 ```{r}
-part_var_wb<-data.frame(glmm_r2=draws_wb$glmm_r2,
-                     fixed_r2=draws_wb$fixed_r2,
-                     ICC_adj=draws_wb$ICC_adj,
-                     ICC_adj_a=draws_wb$ICC_adj_a,
-                     ICC_adj_d=draws_wb$ICC_adj_d,
-                     ICC_adj_l=draws_wb$ICC_adj_l,
-                     part_r2_popDensity=draws_wb$part_r2_popDensity,
-                     vpc_a=draws_wb$vpc_a,
-                     vpc_d=draws_wb$vpc_d,
-                     vpc_l=draws_wb$vpc_l)
+anglerEffect<-draws$log_q_a
 
-ggplot(part_var_wb)+
-  geom_density(aes(x=glmm_r2))+
-  theme_bw()
+anglerEffectMean<-colMeans(anglerEffect)
+anglerEffectSD<-apply(anglerEffect, 2, sd)
 
-ggplot(part_var_wb)+
-  geom_density(aes(x=fixed_r2))+
-  theme_bw()
+anglerData_mod$A<-anglerData_mod$anglerID
 
-ggplot(part_var_wb)+
-  geom_density(aes(x=ICC_adj))+
-  theme_bw()
+anglerEffect<-anglerID%>%
+  left_join(anglerData_mod, by="A")
 
-ggplot(part_var_wb)+
-  geom_density(aes(x=ICC_adj_a))+
-  theme_bw()
-ggplot(part_var_wb)+
-  geom_density(aes(x=ICC_adj_d))+
-  theme_bw()
-ggplot(part_var_wb)+
-  geom_density(aes(x=ICC_adj_l))+
-  theme_bw()
+anglerEffect$meanEffect<-anglerEffectMean
+anglerEffect$sdEffect<-anglerEffectSD
+
+angler_effect<-anglerEffect%>%
+  mutate(upperCI=meanEffect+1.96*sdEffect,
+         lowerCI=meanEffect-1.96*sdEffect)
+
+ggplot(angler_effect)+
+  geom_point(aes(x=A, y=meanEffect))+
+  geom_errorbar(aes(x=A, y=meanEffect, ymin=lowerCI, ymax=upperCI))
+
+```
+
+```{r}
+chart.Correlation(angler_effect[,c(25:27)])
+```
+
+```{r}
+angler_mod<-lm(meanEffect~daysFishedPast_sc+centrality, data=angler_effect)
+plot(angler_mod)
+summary(angler_mod)
+```
+```{r}
+lakeEffect<-draws$log_q_l
+
+lakeEffectMean<-colMeans(lakeEffect)
+lakeEffectSD<-apply(lakeEffect, 2, sd)
+
+lakeEffect_mod<-data.frame(lakeEffectMean=lakeEffectMean,
+                           lakeEffectSD=lakeEffectSD,
+                           upperCI=lakeEffectMean+1.96*lakeEffectSD,
+                           lowerCI=lakeEffectMean-1.96*lakeEffectSD)
+
+lakeEffect<-cbind.data.frame(lakeID, lakeEffect_mod)
 
 
+ggplot(lakeEffect)+
+  geom_point(aes(x=L, y=lakeEffectMean))+
+  geom_errorbar(aes(x=L, y=lakeEffectMean, ymin=lowerCI, ymax=upperCI))
 
-ggplot(part_var_wb)+
-  geom_density(aes(x=part_r2_popDensity), fill="purple")+
-  theme_bw()
-# model run problems if I bound lower limit at 0
+```
 
+I bet there's a size effect (or shoreline length effect) because bass got caught less often in the bigger lakes.
 
-angler<-ggplot(part_var_wb)+
-  geom_density(aes(x=vpc_a), fill="orange")+
-  ggtitle("Angler VPC")+
-  xlim(0,1)+
-  theme_bw()
+```{r}
+plot(lakeEffect$lakeEffectMean~lakeEffect$surfaceArea)
+```
+```{r}
+lakes<-dbTable("lakes", fpath=db.dir)
 
-day<-ggplot(part_var_wb)+
-  geom_density(aes(x=vpc_d), fill="yellow")+
-  ggtitle("Date VPC")+
-  xlim(0,1)+
-  theme_bw()
+samples_electro<-dbTable("fish_samples", fpath=db.dir)
+  filter(projectID==38 & gear=="BE")
 
-lake<-ggplot(part_var_wb)+
-  geom_density(aes(x=vpc_l), fill="blue")+
-  ggtitle("Lake VPC")+
-  xlim(0,1)+
-  theme_bw()
+samples_angling<-dbTable("fish_samples", fpath=db.dir)%>%
+  filter(projectID==38 & gear=="AN")
 
-library(cowplot)
+dbTableList(db.dir, db)
 
-plot_grid(angler, day, lake, nrow=1)
 
 
 ```
-Chris Cahill suggested just standardizing the predictors. Fitting a version with scaled populationd ensity:
-
-```{r}
-
-real_fit_sc<-stan(file="catch.model.scaled.stan",
-                 data=data.list,
-                 #init=hier.inits,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-#launch_shinystan(real_fit)
-
-draws_sc<-extract(real_fit_sc)
-
-hist(draws_sc$beta)
-mean(draws_sc$beta)
-sd(draws_sc$beta)
-```
-```{r}
-hist(draws_sc$sigma_q_a)
-hist(draws_sc$sigma_q_d)
-hist(draws_sc$sigma_q_l)
-
-mean(draws_sc$sigma_q_a)
-mean(draws_sc$sigma_q_d)
-mean(draws_sc$sigma_q_l)
-```
-
-
-
-Look at predictions
-
-```{r}
-predictions_all<-colMeans(draws$predictions_all)
-predictions_all_link<-colMeans(draws$predictions_all_link)
-predictions_fixed<-colMeans(draws$predictions_fixed)
-predictions_random<-colMeans(draws$predictions_random)
-prediction_no_popDensity<-colMeans(draws$predictions_no_popDensity)
-
-pred.df<-data.frame(pred_all=predictions_all,
-                    pred_fixed=predictions_fixed,
-                    pred_random=predictions_random,
-                    pred_all_link=predictions_all_link,
-                    prediction_no_popDensity=prediction_no_popDensity)
-
-ggplot(pred.df)+
-  geom_histogram(aes(x=pred_all_link))+
-  geom_histogram(aes(x=pred_fixed), fill="red", alpha=0.4)+
-  geom_histogram(aes(x=pred_random), fill="blue", alpha=0.4)+
-  theme_bw()
-            
-```
-
-Predictions with fixed effects only have huuuge variance. It doesn't make sense to use only fixed effects here. 
+looking at Colin's hyperstability paper, they used a different mark recap method for population estimates because they had individual fish capture histories

@@ -163,7 +163,6 @@ generated quantities{
   array[N] real predictions_no_popDensity;
   //array[N] real predictions_random;
   array[N] real predictions_fixed;
-  array[N] real predictions_fixed_count;
   array[P] real predictions_plot;
 
 
