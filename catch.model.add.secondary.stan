@@ -91,10 +91,7 @@ transformed parameters{
   array[D] real log_q_d;
   array[L] real log_q_l;
   
-  //array[A] real q_a;
-  //array[D] real q_d;
-  //array[L] real q_l;
-  
+
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;

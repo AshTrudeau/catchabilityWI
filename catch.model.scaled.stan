@@ -98,9 +98,12 @@ transformed parameters{
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;
+  vector[L] log_popDensity_sc;
   
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
+  
+  log_popDensity_sc = (log_popDensity-mean(log_popDensity))/sd(log_popDensity);
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
@@ -116,9 +119,12 @@ transformed parameters{
 
 for(i in 1:N){
 
-  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
+  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
+ // q_a = exp(log_q_mu+log_q_a);
+  //q_d = exp(log_q_mu+log_q_d);
+  //q_l = exp(log_q_mu+log_q_l);
 
 }
 
@@ -171,8 +177,10 @@ generated quantities{
  // real resid_var;
   real pred_var;
   real pred_var_link;
+  //real<lower=0> bayes_r2;
   real<lower=0> glmm_r2;
   real pred_var_no_popDensity;
+ // real pred_var_random;
   real pred_var_fixed;
   real part_r2_popDensity;
   real prediction_b0;
@@ -182,18 +190,23 @@ generated quantities{
   real ICC_adj_d;
   real ICC_adj_l;
   real fixed_r2;
+  //real lmbCatch_var;
 
   
+  //for(n in 1:N){
+    //log_lik[n] = neg_binomial_2_log_lpmf(lmbCatch[n] | log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]], phi);
+  //}
+  
   for(n in 1:N){
-    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
+    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
   }
   
   for(n in 1:N){
-    predictions_all_link[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]];
+    predictions_all_link[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]];
   }
   // for plot predicting catch rates across pop densities
   for(p in 1:P){
-    predictions_plot[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
+    predictions_plot[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity_sc[lakeID_pred[p]]);
   }
 
   // log_effort is an offset, not really a fixed effect
@@ -206,22 +219,37 @@ generated quantities{
   // I think the problems earlier were caused by me forgetting log_mu_q_a, d, l
   // but looking back at Nakagawa et al2017, I really dont think the intercepts are supposedto be there? (though I don't see why it would matter)
   for(n in 1:N){
-    predictions_fixed[n] = log_effort[n] + beta*log_popDensity[LL[n]];
+    predictions_fixed[n] = log_effort[n] + beta*log_popDensity_sc[LL[n]];
   }
   
 
+ // for(n in 1:N){
+   // predictions_random[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]]+ log_q_d[DD[n]] + log_q_l[LL[n]];
+  //}
+  
   prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
 
+  // for Bayes r2 (Gelman et al 2019)
+  // check on this, I probably did it wrong
+  //for(n in 1:N){
+  //  diff[n] = predictions_all[n] - lmbCatch[n];
+ // }
 
+ // resid_var=variance(diff);
   pred_var = variance(predictions_all);
   pred_var_link = variance(predictions_all_link);
   pred_var_no_popDensity = variance(predictions_no_popDensity);
+  //pred_var_random = variance(predictions_random);
   pred_var_fixed = variance(predictions_fixed);
-
+  //pred_var_fixed_count = variance(predictions_fixed_count);
+  
   lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2));
 
   
-
+  // Gelman et al 2019, American statistician
+  // these are on the observation scale
+  //bayes_r2=pred_var/(pred_var+resid_var);
+  
   // Nakagawa et al 2017, royal society, most useful paper ever
   glmm_r2=(pred_var_fixed + sigma_q_a^2+sigma_q_d^2+sigma_q_l^2)/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + trigamma(((1/lambda)+(1/phi))^-1));
   fixed_r2=(pred_var_fixed)/(pred_var_fixed + sigma_q_a^2 + sigma_q_d^2 + sigma_q_l^2 + trigamma(((1/lambda)+(1/phi))^-1));
@@ -243,18 +271,19 @@ generated quantities{
   
 
   //VPC simulation method--on data scale, but not confident about how I treated population density
-  // instead of using mean population density, now choosing PD from 1 lake
 
   array[1000] real sim_log_q_a;
   array[1000] real sim_log_q_d;
   array[1000] real sim_log_q_l;
 
+  //real mean_log_popDensity_sc;
   real mean_log_effort;
 
   array[1000] real catchHatStar_a;
   array[1000] real catchHatStar_d;
   array[1000] real catchHatStar_l;
   array[1000] real catchHatStar_all;
+  //array[1000] real catchHatStar_marg;
 
   array[1000] real var_catchHatStar_all;
   real expect_v1_all;
@@ -270,7 +299,7 @@ generated quantities{
 
 
 
- // mean_log_popDensity = mean(log_popDensity);
+ // mean_log_popDensity_sc = mean(log_popDensity_sc);
   mean_log_effort = mean(log_effort);
 
 
@@ -284,12 +313,15 @@ generated quantities{
 
   // compute catchHatStar values
 
- // Switch out prediction lakes here, log_popDensity[X]
+ 
   for(i in 1:1000){
-    catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*log_popDensity[5]); // simulate all of the random intercepts
-    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity[5]); // simulate one random intercept at a time
-    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*log_popDensity[5]);
-    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*log_popDensity[5]);
+    catchHatStar_all[i]= exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*log_popDensity_sc[5]); // simulate all of the random intercepts
+    catchHatStar_a[i] = exp(mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity_sc[5]); // simulate one random intercept at a time
+    catchHatStar_d[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*log_popDensity_sc[5]);
+    catchHatStar_l[i] = exp(mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*log_popDensity_sc[5]);
+    // only fixed effects
+    // ah, no, this doesn't work (with this simulation method anyway) because the array put out by the following function has var =0 
+    //catchHatStar_marg[i] = exp(mean_log_effort + beta*mean_log_popDensity_sc);
   }
   
   for(i in 1:1000){
@@ -302,13 +334,15 @@ generated quantities{
     var2_catchHatStar_d = variance(catchHatStar_d);
     var2_catchHatStar_l = variance(catchHatStar_l);
     var2_catchHatStar_all = variance(catchHatStar_all);
-
+    //var2_catchHatStar_marg = variance(catchHatStar_marg);
+    
     expect_v1_all = mean(var_catchHatStar_all);
     
     vpc_a = var2_catchHatStar_a/(var2_catchHatStar_all + expect_v1_all);
     vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all);
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
-
+    //vpc_marg = var2_catchHatStar_marg/(var2_catchHatStar_all + expect_v1_all);
+    
 
 }
 
