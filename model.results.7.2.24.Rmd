@@ -243,7 +243,7 @@ data.list<-list(N=nrow(data.indexed),
 
 ```{r}
 
-real_fit<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+real_fit<-stan(file="catch.model.zinf.scale.random.slope.stan",
                  data=data.list,
                  #init=hier.inits,
                  control=list(stepsize=0.1, max_treedepth=15),

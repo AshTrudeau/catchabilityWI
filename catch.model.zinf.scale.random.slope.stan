@@ -100,9 +100,13 @@ transformed parameters{
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;
+  vector[L] log_popDensity_sc;
+
   
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
+  log_popDensity_sc = (log_popDensity-mean(log_popDensity))/sd(log_popDensity);
+
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
@@ -118,7 +122,7 @@ transformed parameters{
 
 for(i in 1:N){
 
-  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
+  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
 
@@ -165,12 +169,12 @@ generated quantities{
 
 
   for(n in 1:N){
-    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]],phi);
+    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
   }
   
   
   for(n in 1:N){
-    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
+    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
   }
 
 }
