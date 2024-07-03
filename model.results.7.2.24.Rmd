@@ -217,9 +217,9 @@ data.list<-list(N=nrow(data.indexed),
                 A=max(data.indexed$A),
                 D=max(data.indexed$D),
                 L=max(data.indexed$L),
-                Z = max(data.indexed$A)*max(data.indexed$L),
-                Y= max(data.indexed$D)*max(data.indexed$L),
-                X= max(data.indexed$L)*max(data.indexed$L),
+                #Z = max(data.indexed$A)*max(data.indexed$L),
+                #Y= max(data.indexed$D)*max(data.indexed$L),
+                #X= max(data.indexed$L)*max(data.indexed$L),
                 AA=data.indexed$A,
                 DD=data.indexed$D,
                 LL=data.indexed$L,
@@ -227,13 +227,14 @@ data.list<-list(N=nrow(data.indexed),
                 log_effort=data.indexed$log_effort,
                 sumCtMt=lakeID$sumCtMt,
                 sumRt=lakeID$sumRt,
-                surfaceArea=lakeID$surfaceArea,
-                pred_angler=pred_angler,
-                pred_angler_pop=pred_angler_pop,
-                pred_date=pred_date,
-                pred_date_pop=pred_date_pop,
-                pred_lake=pred_lake,
-                pred_lake_pop=pred_lake_pop
+                surfaceArea=lakeID$surfaceArea
+                # ,
+                # pred_angler=pred_angler,
+                # pred_angler_pop=pred_angler_pop,
+                # pred_date=pred_date,
+                # pred_date_pop=pred_date_pop,
+                # pred_lake=pred_lake,
+                # pred_lake_pop=pred_lake_pop
                 )
 
 #pred_df<-data.frame(lakeID=lakeID_pred,
@@ -242,26 +243,44 @@ data.list<-list(N=nrow(data.indexed),
 ```
 
 ```{r}
+y<-data.list$lmbCatch
 
-real_fit<-stan(file="catch.model.zinf.scale.random.slope.stan",
+fit_no_zinf<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  data=data.list,
                  #init=hier.inits,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
-                 cores=4,
+                 cores=1,
                  refresh=0)
-#launch_shinystan(real_fit)
 
-draws<-extract(real_fit)
+fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=1,
+                 refresh=0)
+launch_shinystan(fit_no_zinf)
+
+draws.no.zinf<-extract(fit_no_zinf)
+draws.zinf<-extract(fit_zinf)
+
+pairs(real_fit, pars=c("beta","phi","log_mu_q_a","log_mu_q_d","log_mu_q_l","log_q_mu"))
 
 ```
+7/3/24
+need to check posterior on zinf model compared to nb
+Once that's working, try varying effect of anglerID on beta
+Materials; https://github.com/QFCatMSU/FW-Bayes/blob/main/week7/lec10.pdf 
+Statistical rethinking, chapter on 'models with memory'
 
 model predictions
 
 ```{r}
-posterior_pred_check<-draws$predictions_all
 
 hist(colMeans(posterior_pred_check))
 

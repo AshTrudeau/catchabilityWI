@@ -12,6 +12,26 @@
 
 // random effects are unbalanced and not nested
 
+functions {
+  //int num_zeros(array[] int lmbCatch) {
+    //int sum=0;
+    //for(n in 1:size(lmbCatch)){
+      //sum += (lmbCatch[n] == 0);
+    //}
+    //return sum;
+  //}
+//}
+
+real zero_inflated_neg_binomial_log_logit_lpmf(int lmbCatch, real logCatchHat, real phi, real zi){
+  if (lmbCatch==0){
+    return log_sum_exp(bernoulli_logit_lpmf(1|zi), bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(0|logCatchHat,phi));
+  } else{
+    return bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
+  }
+  
+}
+}
+
 data {
   // number of observations (205)
   int<lower=1> N;
@@ -23,9 +43,9 @@ data {
   int<lower=1> L; 
     // number of predictions (all observations)
   // number of predictions for plots
-  int<lower=1> Z; // (234)
-  int<lower=1> Y; // (546)
-  int<lower=1> X; // (169)
+  //int<lower=1> Z; // (234)
+  //int<lower=1> Y; // (546)
+  //int<lower=1> X; // (169)
 
   
   // all observations of catch (response)
@@ -45,15 +65,33 @@ data {
   int sumRt[L];
   
 
-  array[Z] int<lower=1, upper=A> pred_angler;
-  array[Z] int<lower=1, upper=L> pred_angler_pop;
-  array[Y] int<lower=1, upper=D> pred_date;
-  array[Y] int<lower=1, upper=L> pred_date_pop;
-  array[X] int<lower=1, upper=L> pred_lake;
-  array[X] int<lower=1, upper=L> pred_lake_pop;
+ // array[Z] int<lower=1, upper=A> pred_angler;
+  //array[Z] int<lower=1, upper=L> pred_angler_pop;
+  //array[Y] int<lower=1, upper=D> pred_date;
+  //array[Y] int<lower=1, upper=L> pred_date_pop;
+  //array[X] int<lower=1, upper=L> pred_lake;
+  //array[X] int<lower=1, upper=L> pred_lake_pop;
 
   
 }
+
+//transformed data{
+  
+  //int<lower=0> N_zero = num_zeros(lmbCatch);
+  //array[N - N_zero] int<lower=1> lmbCatch_nonzero;
+  //int N_nonzero = 0;
+  
+  //for(n in 1:N){
+    //if (lmbCatch[n]!=0) {
+      //N_nonzero += 1;
+      //lmbCatch_nonzero[N_nonzero] = lmbCatch[n];
+    //}
+    
+  //  }
+    
+//}
+  
+
 
 
 parameters {
@@ -66,6 +104,7 @@ parameters {
   real<lower=0> beta;
   // dispersion
   real<lower=0> phi;
+  real<lower=0, upper=1> theta;
   
   // angler effect
   real<lower=0> sigma_q_a;
@@ -85,6 +124,8 @@ parameters {
   array[L] real q_l_raw;
   // population estimate
   vector<lower=0>[L] PE;
+  
+  array[N] real zi;
 
 
 }
@@ -92,6 +133,7 @@ parameters {
 transformed parameters{
   // log link prediction
   array[N] real logCatchHat;
+  //array[N_zero] real logCatchHat_zero;
   
   array[A] real log_q_a;
   array[D] real log_q_d;
@@ -125,7 +167,6 @@ for(i in 1:N){
   logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
-
 }
 
 model {
@@ -135,7 +176,16 @@ model {
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
   target += lognormal_lpdf(popDensity | 0,2);
   
-  target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
+  for(n in 1:N){
+    target+= zero_inflated_neg_binomial_log_logit_lpmf(lmbCatch[n] | logCatchHat[n], phi, zi[n]);
+  }
+  
+  //target += N_zero * log_sum_exp(log(theta), log1m(theta) + neg_binomial_2_log_lpmf(0 | logCatchHat_zero, phi));
+  //target += N_nonzero * log1m(theta);
+  //target += neg_binomial_2_log_lpmf(lmbCatch_nonzero | logCatchHat_nonzero, phi);
+  
+
+  //target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
 
   target += std_normal_lpdf(q_a_raw);
   target += std_normal_lpdf(q_d_raw);
@@ -165,17 +215,18 @@ generated quantities{
   
  // vector[N] log_lik;
   array[N] real posterior_pred_check;
-  array[N] real predictions_all;
+  real zero;
+  //array[N] real predictions_all;
 
 
   for(n in 1:N){
-    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
+    zero=bernoulli_logit_rng(zi[n]);
+    posterior_pred_check[n]=(1-zero)*neg_binomial_2_log_rng(logCatchHat[n], phi);
   }
   
-  
-  for(n in 1:N){
-    predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
-  }
+  //for(n in 1:N){
+    //predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
+  //}
 
 }
 
