@@ -21,8 +21,11 @@ data {
   int<lower=1> D;
   // number of lakes (13)
   int<lower=1> L; 
-    // number of predictions
-  int<lower=1> P;
+    // number of predictions (all observations)
+  // number of predictions for plots
+  int<lower=1> Z; // (234)
+  int<lower=1> Y; // (546)
+  int<lower=1> X; // (169)
 
   
   // all observations of catch (response)
@@ -41,10 +44,13 @@ data {
   vector[L] surfaceArea;
   int sumRt[L];
   
-  array[P] int<lower=1, upper=L> lakeID_pred;
-  array[P] int<lower=1, upper=A> anglerID_pred;
-  array[P] int<lower=1, upper=D> dateID_pred;
-  array[P] real effort_pred;
+
+  array[Z] int<lower=1, upper=A> pred_angler;
+  array[Z] int<lower=1, upper=L> pred_angler_pop;
+  array[Y] int<lower=1, upper=D> pred_date;
+  array[Y] int<lower=1, upper=L> pred_date_pop;
+  array[X] int<lower=1, upper=L> pred_lake;
+  array[X] int<lower=1, upper=L> pred_lake_pop;
 
   
 }
@@ -90,10 +96,6 @@ transformed parameters{
   array[A] real log_q_a;
   array[D] real log_q_d;
   array[L] real log_q_l;
-  
-  //array[A] real q_a;
-  //array[D] real q_d;
-  //array[L] real q_l;
   
   // for population density
   vector<lower=0>[L] popDensity;
@@ -158,12 +160,19 @@ model {
 generated quantities{
   
  // vector[N] log_lik;
+  array[N] real posterior_pred_check;
   array[N] real predictions_all;
+  array[L] real predictions_popDensity;
+  array[A] real predictions_box_angler;
+  array[D] real predictions_box_date;
+  array[L] real predictions_box_lake;
+  array[Z] real predictions_pop_angler;
+  array[Y] real predictions_pop_date;
+  array[X] real predictions_pop_lake;
+  
   array[N] real predictions_all_link;
   array[N] real predictions_no_popDensity;
-  //array[N] real predictions_random;
   array[N] real predictions_fixed;
-  array[P] real predictions_plot;
 
 
   //array[N] real diff;
@@ -182,6 +191,10 @@ generated quantities{
   real ICC_adj_l;
   real fixed_r2;
 
+  for(n in 1:N){
+    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]],phi);
+  }
+  
   
   for(n in 1:N){
     predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]]);
@@ -190,9 +203,36 @@ generated quantities{
   for(n in 1:N){
     predictions_all_link[n] = log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]];
   }
-  // for plot predicting catch rates across pop densities
-  for(p in 1:P){
-    predictions_plot[p] = exp(effort_pred[p] + log_q_mu + log_q_a[anglerID_pred[p]] + log_q_d[dateID_pred[p]] + log_q_l[lakeID_pred[p]] + beta * log_popDensity[lakeID_pred[p]]);
+
+  // Predicting across population densities (in data) for mean angler, date, and lake effect
+  for(l in 1:L){
+    predictions_popDensity[l] = exp(log(4) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l + beta*log_popDensity[l]);
+  }
+  // predicting across anglers (all else equal)
+  for(a in 1:A){
+    predictions_box_angler[a] = exp(log(4) + log_q_mu + log_q_a[a] +log_mu_q_d + log_mu_q_l + beta*log_popDensity[5]);
+  }
+  // predicting across dates (all else equal)
+  for(d in 1:D){
+    predictions_box_date[d] = exp(log(4) + log_q_mu + log_mu_q_a +log_q_d[d] + log_mu_q_l + beta*log_popDensity[5]);
+  }
+  // predicting across lakes (all else equal)
+  for(l in 1:L){
+    predictions_box_lake[l] = exp(log(4) + log_q_mu + log_mu_q_a +log_mu_q_d + log_q_l[l] + beta*log_popDensity[5]);
+  }
+  
+  // now still predicting across anglers, dates, and lakes, but also across population densities
+  // anglers first
+  for(z in 1:Z){
+    predictions_pop_angler[z] = exp(log(4) + log_q_mu + log_q_a[pred_angler[z]] + log_mu_q_d + log_mu_q_l + beta*log_popDensity[pred_angler_pop[z]]);
+  }
+  
+  for(y in 1:Y){
+    predictions_pop_date[y] = exp(log(4) + log_q_mu + log_mu_q_a + log_q_d[pred_date[y]] + log_mu_q_l + beta*log_popDensity[pred_date_pop[y]]);
+  }
+  
+  for(x in 1:X){
+    predictions_pop_lake[x] = exp(log(4) + log_q_mu + log_mu_q_a + log_mu_q_d + log_q_l[pred_lake[x]] + beta*log_popDensity[pred_lake_pop[x]]);
   }
 
   // log_effort is an offset, not really a fixed effect
@@ -266,6 +306,25 @@ generated quantities{
   real<lower=0> vpc_a;
   real<lower=0> vpc_d;
   real<lower=0> vpc_l;
+  
+  // on the link scale for comparison
+    array[1000] real catchHatStar_a_link;
+  array[1000] real catchHatStar_d_link;
+  array[1000] real catchHatStar_l_link;
+  array[1000] real catchHatStar_all_link;
+
+  array[1000] real var_catchHatStar_all_link;
+  real expect_v1_all_link;
+  
+  real var2_catchHatStar_a_link;
+  real var2_catchHatStar_d_link;
+  real var2_catchHatStar_l_link;
+  real var2_catchHatStar_all_link;
+
+  real<lower=0> vpc_a_link;
+  real<lower=0> vpc_d_link;
+  real<lower=0> vpc_l_link;
+
 
 
 
@@ -308,6 +367,33 @@ generated quantities{
     vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all);
     vpc_l = var2_catchHatStar_l/(var2_catchHatStar_all + expect_v1_all);
 
+// do it all again but on the link scale for comparison
+
+
+ // Switch out prediction lakes here, log_popDensity[X]
+  for(i in 1:1000){
+    catchHatStar_all_link[i]= mean_log_effort + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + sim_log_q_l[i] + beta*log_popDensity[5]; // simulate all of the random intercepts
+    catchHatStar_a_link[i] = mean_log_effort + log_q_mu + sim_log_q_a[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity[5]; // simulate one random intercept at a time
+    catchHatStar_d_link[i] = mean_log_effort + log_q_mu + log_mu_q_a +sim_log_q_d[i] + log_mu_q_l + beta*log_popDensity[5];
+    catchHatStar_l_link[i] = mean_log_effort + log_q_mu + log_mu_q_a + log_mu_q_d + sim_log_q_l[i] + beta*log_popDensity[5];
+  }
+  
+  for(i in 1:1000){
+        //level 1 variance
+    var_catchHatStar_all_link[i] = catchHatStar_all_link[i] + ((catchHatStar_all_link[i]^2) / phi);
+
+  }
+      // level 2 variance
+    var2_catchHatStar_a_link = variance(catchHatStar_a_link);
+    var2_catchHatStar_d_link = variance(catchHatStar_d_link);
+    var2_catchHatStar_l_link = variance(catchHatStar_l_link);
+    var2_catchHatStar_all_link = variance(catchHatStar_all_link);
+
+    expect_v1_all_link = mean(var_catchHatStar_all_link);
+    
+    vpc_a_link = var2_catchHatStar_a_link/(var2_catchHatStar_all_link + expect_v1_all_link);
+    vpc_d_link = var2_catchHatStar_d_link/(var2_catchHatStar_all_link + expect_v1_all_link);
+    vpc_l_link = var2_catchHatStar_l_link/(var2_catchHatStar_all_link + expect_v1_all_link);
 
 }
 
