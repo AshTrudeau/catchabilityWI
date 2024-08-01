@@ -13,24 +13,24 @@
 // random effects are unbalanced and not nested
 
 functions {
-  //int num_zeros(array[] int lmbCatch) {
-    //int sum=0;
-    //for(n in 1:size(lmbCatch)){
-      //sum += (lmbCatch[n] == 0);
-    //}
-    //return sum;
-  //}
-//}
-
-real zero_inflated_neg_binomial_log_logit_lpmf(int lmbCatch, real logCatchHat, real phi, real zi){
-  if (lmbCatch==0){
-    return log_sum_exp(bernoulli_logit_lpmf(1|zi), bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(0|logCatchHat,phi));
-  } else{
-    return bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
+  int num_zeros(array[] int lmbCatch) {
+    int sum=0;
+    for(n in 1:size(lmbCatch)){
+      sum += (lmbCatch[n] == 0);
+    }
+    return sum;
   }
+}
+
+//real zero_inflated_neg_binomial_log_logit_lpmf(int lmbCatch, real logCatchHat, real phi, real zi){
+  //if (lmbCatch==0){
+    //return log_sum_exp(bernoulli_logit_lpmf(1|zi), bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(0|logCatchHat,phi));
+  //} else{
+    //return bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
+  //}
   
-}
-}
+//}
+//}
 
 data {
   // number of observations (205)
@@ -75,21 +75,21 @@ data {
   
 }
 
-//transformed data{
+transformed data{
   
-  //int<lower=0> N_zero = num_zeros(lmbCatch);
-  //array[N - N_zero] int<lower=1> lmbCatch_nonzero;
-  //int N_nonzero = 0;
+  int<lower=0> N_zero = num_zeros(lmbCatch);
+  array[N - N_zero] int<lower=1> lmbCatch_nonzero;
+  int N_nonzero = 0;
   
-  //for(n in 1:N){
-    //if (lmbCatch[n]!=0) {
-      //N_nonzero += 1;
-      //lmbCatch_nonzero[N_nonzero] = lmbCatch[n];
-    //}
+  for(n in 1:N){
+    if (lmbCatch[n]!=0) {
+      N_nonzero += 1;
+      lmbCatch_nonzero[N_nonzero] = lmbCatch[n];
+    }
     
-  //  }
+    }
     
-//}
+}
   
 
 
@@ -125,15 +125,16 @@ parameters {
   // population estimate
   vector<lower=0>[L] PE;
   
-  array[N] real zi;
+  //array[N] real zi;
 
 
 }
 
 transformed parameters{
   // log link prediction
-  array[N] real logCatchHat;
-  //array[N_zero] real logCatchHat_zero;
+  //array[N] real logCatchHat;
+  array[N_zero] real logCatchHat_zero;
+  array[N_nonzero] real logCatchHat_nonzero;
   
   array[A] real log_q_a;
   array[D] real log_q_d;
@@ -162,9 +163,13 @@ transformed parameters{
     log_q_l[l] = log_mu_q_l + sigma_q_l * q_l_raw[l];
   }
 
-for(i in 1:N){
+for(i in 1:N_nonzero){
 
-  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
+  logCatchHat_nonzero[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
+}
+
+for(i in 1:N_zero){
+    logCatchHat_zero[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
 }
@@ -174,15 +179,16 @@ model {
   //for population estimate, Poisson approximation of hypergeometric distribution
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
+  //target += normal_lpdf(log_popDensity_sc | 0,1);
   target += lognormal_lpdf(popDensity | 0,2);
   
-  for(n in 1:N){
-    target+= zero_inflated_neg_binomial_log_logit_lpmf(lmbCatch[n] | logCatchHat[n], phi, zi[n]);
-  }
+  //for(n in 1:N){
+    //target+= zero_inflated_neg_binomial_log_logit_lpmf(lmbCatch[n] | logCatchHat[n], phi, zi[n]);
+  //}
   
-  //target += N_zero * log_sum_exp(log(theta), log1m(theta) + neg_binomial_2_log_lpmf(0 | logCatchHat_zero, phi));
-  //target += N_nonzero * log1m(theta);
-  //target += neg_binomial_2_log_lpmf(lmbCatch_nonzero | logCatchHat_nonzero, phi);
+  target += N_zero * log_sum_exp(log(theta), log1m(theta) + neg_binomial_2_log_lpmf(0 | logCatchHat_zero, phi));
+  target += N_nonzero * log1m(theta);
+  target += neg_binomial_2_log_lpmf(lmbCatch_nonzero | logCatchHat_nonzero, phi);
   
 
   //target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
@@ -209,24 +215,26 @@ model {
 
   target += lognormal_lpdf(beta | -1,1);
   
+  target += beta_lpdf(theta | 1,1);
+  
 }
 
-generated quantities{
+//generated quantities{
   
  // vector[N] log_lik;
-  array[N] real posterior_pred_check;
-  real zero;
+  //array[N] real posterior_pred_check;
+  //real zero;
   //array[N] real predictions_all;
 
 
-  for(n in 1:N){
-    zero=bernoulli_logit_rng(zi[n]);
-    posterior_pred_check[n]=(1-zero)*neg_binomial_2_log_rng(logCatchHat[n], phi);
-  }
+  //for(n in 1:N){
+    //zero=bernoulli_logit_rng(zi[n]);
+    //posterior_pred_check[n]=(1-zero)*neg_binomial_2_log_rng(logCatchHat[n], phi);
+  //}
   
   //for(n in 1:N){
     //predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
   //}
 
-}
+//}
 

@@ -252,7 +252,7 @@ fit_no_zinf<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  chains=4,
                  warmup=1000,
                  iter=3000,
-                 cores=1,
+                 cores=4,
                  refresh=0)
 
 fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
@@ -262,7 +262,7 @@ fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
                  chains=4,
                  warmup=1000,
                  iter=3000,
-                 cores=1,
+                 cores=4,
                  refresh=0)
 launch_shinystan(fit_no_zinf)
 
