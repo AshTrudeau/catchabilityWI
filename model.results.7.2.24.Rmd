@@ -254,7 +254,7 @@ fit_no_zinf<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  iter=3000,
                  cores=4,
                  refresh=0)
-
+# https://discourse.mc-stan.org/t/predicting-from-a-zero-inflated-negative-binomial-model/31434 
 fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
                  data=data.list,
                  #init=hier.inits,
@@ -264,12 +264,16 @@ fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
                  iter=3000,
                  cores=4,
                  refresh=0)
-launch_shinystan(fit_no_zinf)
+launch_shinystan(fit_zinf)
 
 draws.no.zinf<-extract(fit_no_zinf)
 draws.zinf<-extract(fit_zinf)
 
-pairs(real_fit, pars=c("beta","phi","log_mu_q_a","log_mu_q_d","log_mu_q_l","log_q_mu"))
+theta.df<-data.frame(theta=draws.zinf$theta)
+# check theta
+ggplot(theta.df)+
+  geom_density(aes(theta))
+
 
 ```
 7/3/24
@@ -281,10 +285,16 @@ Statistical rethinking, chapter on 'models with memory'
 model predictions
 
 ```{r}
+posterior_pred_check_zinf<-draws.zinf$posterior_pred_check
+posterior_pred_check_no_zinf<-draws.no.zinf$posterior_pred_check
 
-hist(colMeans(posterior_pred_check))
+ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_zinf[c(1:100),])+
+  xlim(0,100)
 
-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check[1:100,])
+ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_no_zinf[c(1:100),])+
+  xlim(0,100)
+
+
 ggsave(here::here("plots.7.2.24","post.check.100.png"))
 ```
 ```{r}

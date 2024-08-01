@@ -211,7 +211,7 @@ model {
   target += exponential_lpdf(sigma_q_d | 1);
   target += exponential_lpdf(sigma_q_l | 1);
   
-  target += gamma_lpdf(phi| 1,1);
+  target += gamma_lpdf(phi| 1,2);
 
   target += lognormal_lpdf(beta | -1,1);
   
@@ -219,22 +219,22 @@ model {
   
 }
 
-//generated quantities{
+generated quantities{
   
- // vector[N] log_lik;
-  //array[N] real posterior_pred_check;
-  //real zero;
-  //array[N] real predictions_all;
-
-
-  //for(n in 1:N){
-    //zero=bernoulli_logit_rng(zi[n]);
-    //posterior_pred_check[n]=(1-zero)*neg_binomial_2_log_rng(logCatchHat[n], phi);
-  //}
+  // from here: https://discourse.mc-stan.org/t/predicting-from-a-zero-inflated-negative-binomial-model/31434 
   
-  //for(n in 1:N){
-    //predictions_all[n] =exp(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]]);
-  //}
+  //vector[N] log_lik;
+  array[N] real posterior_pred_check;
+  int<lower=0, upper=1> zero;
 
-//}
+
+  for(n in 1:N){
+     //this puts out a probability of "success", which counterintuitively here is zero catch
+    zero=bernoulli_rng(theta);
+    // swap meaning of zero/not zero with 1-zero * NB prediction
+    posterior_pred_check[n]=(1-zero)*neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]], phi);
+  }
+  
+
+}
 

@@ -100,9 +100,12 @@ transformed parameters{
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;
+  vector[L] log_popDensity_sc;
+
   
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
+  log_popDensity_sc = (log_popDensity-mean(log_popDensity))/sd(log_popDensity);
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
