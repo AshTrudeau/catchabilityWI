@@ -6,7 +6,7 @@ date: "2024-07-02"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesPlot)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot)
 ```
 
 Pull raw data from MFE database
@@ -288,36 +288,50 @@ model predictions
 posterior_pred_check_zinf<-draws.zinf$posterior_pred_check
 posterior_pred_check_no_zinf<-draws.no.zinf$posterior_pred_check
 
-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_zinf[c(1:100),])+
+zinf.ppc<-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_zinf[c(1:100),])
   xlim(0,100)
 
-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_no_zinf[c(1:100),])+
+no.zinf.ppc<-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_no_zinf[c(1:100),])+
   xlim(0,100)
 
+plot_grid(no.zinf.ppc, zinf.ppc, labels=c("no.zinf","zinf"))
+ggsave(here::here("compare.zinf.no.zinf","posterior.prediction.check.png"))
 
-ggsave(here::here("plots.7.2.24","post.check.100.png"))
+
+higher.30<-function(column){
+  result<-ifelse(column>30, T, F)
+  return(sum(result))
+}
+
+apply(posterior_pred_check_zinf, 2, higher.30)
+
+apply(posterior_pred_check_no_zinf, 2, higher.30)
 ```
+
+Now the zinf model is no longer underpredicting zeroes, but it is now predicting a lot of excessively-high catch rates. Maybe a random slope on catchability will improve this? 
+
 ```{r}
-pred1<-posterior_pred_check[1,]
-iter1<-ggplot()+
-  geom_point(aes(x=data.list$lmbCatch, y=pred1))+
+pred1.zinf<-posterior_pred_check_zinf[1,]
+iter1.zinf<-ggplot()+
+  geom_point(aes(x=data.list$lmbCatch, y=pred1.zinf))+
+  ylim(0,55)+
+  xlim(0,55)+
+  geom_abline(intercept=0, slope=1)
+
+pred1.no.zinf<-posterior_pred_check_no_zinf[1,]
+iter1.no.zinf<-ggplot()+
+  geom_point(aes(x=data.list$lmbCatch, y=pred1.no.zinf))+
   ylim(0,55)+
   xlim(0,55)+
   geom_abline(intercept=0, slope=1)
 
 
-meanpred<-colMeans(posterior_pred_check)
 
-meaniter<-ggplot()+
-  geom_point(aes(x=data.list$lmbCatch, y=meanpred))+
-    ylim(0,55)+
-  xlim(0,55)+
-  geom_abline(intercept=0, slope=1)
 
-plot_grid(iter1, meaniter)
-ggsave(here::here("plots.7.2.24", "obs.vs.pred.png"))
+plot_grid(iter1.no.zinf, iter1.zinf, labels=c("no.zinf","zinf"))
+ggsave(here::here("compare.zinf.no.zinf", "obs.vs.pred.png"))
 ```
-
+ooo that's bad
 
 Density plot posteriors for beta, phi, log_q_mu, log_q_a,d,l
 
