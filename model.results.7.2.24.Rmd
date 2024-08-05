@@ -254,6 +254,7 @@ fit_no_zinf<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
                  iter=3000,
                  cores=4,
                  refresh=0)
+launch_shinystan(fit_no_zinf)
 # https://discourse.mc-stan.org/t/predicting-from-a-zero-inflated-negative-binomial-model/31434 
 fit_zinf<-stan(file="catch.model.zinf.scale.random.slope.stan",
                  data=data.list,
@@ -291,7 +292,7 @@ posterior_pred_check_no_zinf<-draws.no.zinf$posterior_pred_check
 zinf.ppc<-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_zinf[c(1:100),])
   xlim(0,100)
 
-no.zinf.ppc<-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_no_zinf[c(1:100),])+
+no.zinf.ppc<-ppc_dens_overlay(data.list$lmbCatch, posterior_pred_check_no_zinf[c(1:100),])
   xlim(0,100)
 
 plot_grid(no.zinf.ppc, zinf.ppc, labels=c("no.zinf","zinf"))
@@ -314,15 +315,15 @@ Now the zinf model is no longer underpredicting zeroes, but it is now predicting
 pred1.zinf<-posterior_pred_check_zinf[1,]
 iter1.zinf<-ggplot()+
   geom_point(aes(x=data.list$lmbCatch, y=pred1.zinf))+
-  ylim(0,55)+
-  xlim(0,55)+
+ # ylim(0,55)+
+#  xlim(0,55)+
   geom_abline(intercept=0, slope=1)
 
 pred1.no.zinf<-posterior_pred_check_no_zinf[1,]
 iter1.no.zinf<-ggplot()+
   geom_point(aes(x=data.list$lmbCatch, y=pred1.no.zinf))+
-  ylim(0,55)+
-  xlim(0,55)+
+ # ylim(0,55)+
+  #xlim(0,55)+
   geom_abline(intercept=0, slope=1)
 
 
@@ -333,16 +334,20 @@ ggsave(here::here("compare.zinf.no.zinf", "obs.vs.pred.png"))
 ```
 ooo that's bad
 
+Is it a problem with the predictions? or are the model fits just that different? 
+
 Density plot posteriors for beta, phi, log_q_mu, log_q_a,d,l
 
-```{r}
-beta<-draws$beta
-phi<-draws$phi
-log_q_mu<-draws$log_q_mu
+Let's see if adding the random slope for beta improves the underprediction of zeroes. Unless I've done something wrong, I don't think zinf is the way to go. 
 
-log_q_a<-draws$log_q_a
-log_q_d<-draws$log_q_d
-log_q_l<-draws$log_q_l
+```{r}
+beta<-draws.no.zinf$beta
+phi<-draws.no.zinf$phi
+log_q_mu<-draws.no.zinf$log_q_mu
+
+log_q_a<-draws.no.zinf$log_q_a
+log_q_d<-draws.no.zinf$log_q_d
+log_q_l<-draws.no.zinf$log_q_l
 
 beta.plot<-ggplot()+
   geom_density(aes(x=beta))+
@@ -360,8 +365,38 @@ phi.plot
 log.q.mu.plot
 
 plot_grid(beta.plot, phi.plot, log.q.mu.plot)
-ggsave(here::here("plots.7.2.24","params.png"))
+ggsave(here::here("compare.zinf.no.zinf","no.zinf.params.png"))
 ```
+```{r}
+beta<-draws.zinf$beta
+phi<-draws.zinf$phi
+log_q_mu<-draws.zinf$log_q_mu
+
+log_q_a<-draws.zinf$log_q_a
+log_q_d<-draws.zinf$log_q_d
+log_q_l<-draws.zinf$log_q_l
+
+beta.plot<-ggplot()+
+  geom_density(aes(x=beta))+
+  theme_bw()
+
+phi.plot<-ggplot()+
+  geom_density(aes(x=phi))+
+  theme_bw()
+
+log.q.mu.plot<-ggplot()+
+  geom_density(aes(log_q_mu))+
+  theme_bw()
+beta.plot
+phi.plot
+log.q.mu.plot
+
+plot_grid(beta.plot, phi.plot, log.q.mu.plot)
+ggsave(here::here("compare.zinf.no.zinf","zinf.params.png"))
+
+```
+
+Ok the beta parameter is way different. It's a lot less constrained, which is probably why I'm getting such high catch values. zinf might not be the way to go here then. 
 
 ```{r}
 popDensity_fun<-function(draws){

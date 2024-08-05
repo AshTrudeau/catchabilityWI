@@ -1,5 +1,4 @@
 //
-// fitting nonlinear catch equation largemouth bass catch rates
 
 
 
@@ -121,7 +120,7 @@ transformed parameters{
 
 for(i in 1:N){
 
-  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity[LL[i]];
+  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
 
@@ -154,7 +153,7 @@ model {
   target += exponential_lpdf(sigma_q_d | 1);
   target += exponential_lpdf(sigma_q_l | 1);
   
-  target += gamma_lpdf(phi| 1,1);
+  target += gamma_lpdf(phi| 1,2);
 
   target += lognormal_lpdf(beta | -1,1);
   
@@ -195,7 +194,7 @@ generated quantities{
   //real fixed_r2;
 
   for(n in 1:N){
-    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity[LL[n]],phi);
+    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
   }
   
   

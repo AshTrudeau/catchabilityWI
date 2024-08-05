@@ -22,15 +22,6 @@ functions {
   }
 }
 
-//real zero_inflated_neg_binomial_log_logit_lpmf(int lmbCatch, real logCatchHat, real phi, real zi){
-  //if (lmbCatch==0){
-    //return log_sum_exp(bernoulli_logit_lpmf(1|zi), bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(0|logCatchHat,phi));
-  //} else{
-    //return bernoulli_logit_lpmf(0|zi) + neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
-  //}
-  
-//}
-//}
 
 data {
   // number of observations (205)
@@ -182,24 +173,18 @@ model {
   //target += normal_lpdf(log_popDensity_sc | 0,1);
   target += lognormal_lpdf(popDensity | 0,2);
   
-  //for(n in 1:N){
-    //target+= zero_inflated_neg_binomial_log_logit_lpmf(lmbCatch[n] | logCatchHat[n], phi, zi[n]);
-  //}
-  
+
   target += N_zero * log_sum_exp(log(theta), log1m(theta) + neg_binomial_2_log_lpmf(0 | logCatchHat_zero, phi));
   target += N_nonzero * log1m(theta);
   target += neg_binomial_2_log_lpmf(lmbCatch_nonzero | logCatchHat_nonzero, phi);
   
 
-  //target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
 
   target += std_normal_lpdf(q_a_raw);
   target += std_normal_lpdf(q_d_raw);
   target += std_normal_lpdf(q_l_raw);
   
   target += normal_lpdf(log_q_mu | 0,1);
-  // testing sensitivity of priors
-  //target += student_t_lpdf(log_q_mu |3, 0,1);
 
 
   target += normal_lpdf(log_mu_q_a | 0,1);
