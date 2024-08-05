@@ -6,7 +6,7 @@ date: "2024-08-05"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior)
 ```
 
 Pull raw data from MFE database
@@ -217,7 +217,8 @@ data.list<-list(N=nrow(data.indexed),
                 sumRt=lakeID$sumRt,
                 surfaceArea=lakeID$surfaceArea
                 )
-y<-data.list$lmbCatch
+
+# trying a run that generates posterior predictions from the random effects I already have (rather than generating new ones)
 
 fit_vary_slope<-stan(file="varying.effects.beta.stan",
                  data=data.list,
@@ -229,6 +230,174 @@ fit_vary_slope<-stan(file="varying.effects.beta.stan",
                  cores=4,
                  refresh=0)
 
-launch_shinystan(fit_vary_slope)
+#launch_shinystan(fit_vary_slope)
+post<-extract(fit_vary_slope)
+
+angler_effect<-post$angler_effect
+mean_angler_effect<-colMeans(angler_effect)
+
+plot(mean_angler_effect[,2]~mean_angler_effect[,1])
+
+```
+negative correlation--at a higher intercept, there tends to be a lower beta, or more hyperstable catch rates (which makes sense)
+
+
+
+Can I plot the draws of slope and intercept by angler? 
+
+```{r}
+angler_intercept<-as.data.frame(angler_effect[,,1])
+names(angler_intercept)<-c(paste("angler", c(1:18), sep="_"))
+
+angler_int_long<-angler_intercept%>%
+  pivot_longer(cols=everything(), names_to = "angler", values_to="intercept")
+
+
+angler_slope<-as.data.frame(angler_effect[,,2])
+names(angler_slope)<-paste0("angler_", seq(1:18))
+
+angler_slope_long<-angler_slope%>%
+  pivot_longer(cols=everything(), names_to="angler", values_to="slope")
+
+sum(angler_int_long$angler!=angler_slope_long$angler)
 ```
 
+```{r}
+# join is very slow--unnecessary? probably can just bind together
+angler_params<-cbind.data.frame(angler_int_long, angler_slope_long[,c("slope")])
+
+ggplot(angler_params)+
+  geom_density(aes(x=intercept))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  facet_wrap(vars(angler))+
+  theme_bw()
+
+ggplot(angler_params)+
+  geom_density(aes(x=slope))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  facet_wrap(vars(angler))+
+  theme_bw()
+
+```
+now sd for intercept and slope among anglers
+
+```{r}
+sd_angler_params<-as.data.frame(post$sigma_angler)
+names(sd_angler_params)<-c("sd_intercept","sd_slope")
+
+
+
+
+ggplot(sd_angler_params)+
+  geom_density(aes(x=sd_intercept))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  ggtitle("sd_intercept")+
+  theme_bw()
+
+ggplot(sd_angler_params)+
+  geom_density(aes(x=sd_slope))+
+  geom_vline(xintercept=0, linetype="dashed")+
+  ggtitle("sd_slope")+
+  theme_bw()
+
+
+```
+
+
+
+
+Function to pivot, and visualize for the rest of the parameters
+```{r}
+# give it a named df
+plot_param<-function(posterior, param.name){
+  param.df=as.data.frame(posterior[[param.name]])
+  long=pivot_longer(param.df, cols=everything(), names_to=param.name)
+  ggplot(long)+
+    geom_density(aes(x=value))+
+    #facet_wrap(var(param.name))+
+    geom_vline(xintercept=0, linetype="dashed")+
+    ggtitle(param.name)+
+    theme_bw()
+}
+
+plot_param(post, "phi")
+plot_param(post, "angler_global")
+plot_param(post, "sigma_date")
+plot_param(post, "sigma_lake")
+
+```
+population densities
+```{r}
+pop.density<-as.data.frame(post$popDensity)
+names(pop.density)<-paste0("lake_", seq(1:13))
+
+pop.density.long<-pop.density%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+
+ggplot(pop.density.long)+
+  geom_density(aes(x=popDensity))+
+  facet_wrap(vars(lake), scales="free_x")+
+  ylim(0,1)+
+  geom_vline(xintercept=0, linetype="dashed")+
+  theme_bw()
+
+```
+
+oof, those are pretty bad population density estimates
+
+
+```{r}
+pred_draw<-post$catch_pred[1,]
+obs_catch<-data.indexed$lmbCatch
+
+ggplot()+
+  geom_point(aes(x=obs_catch, y=pred_draw))+
+  geom_abline(slope=1, intercept=0)+
+  theme_bw()
+
+```
+
+```{r}
+ppc_dens_overlay(data.list$lmbCatch, post$catch_pred[c(1:100),])
+```
+compare to original fit
+
+```{r}
+fit_vanilla<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+post_vanilla<-extract(fit_vanilla)
+ppc_dens_overlay(data.list$lmbCatch, post_vanilla$posterior_pred_check[c(1:100),])
+
+```
+
+
+
+Try generating new random effects? see how different it is
+```{r}
+fit_slope_zinf<-stan(file="vary.beta.by.angler.zinf.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_slope_zinf<-extract(fit_slope_zinf)
+ppc_dens_overlay(data.list$lmbCatch, post_slope_zinf$catch_pred[c(1:100),])
+
+
+
+
+```
+
+add zinf?
+lol no
