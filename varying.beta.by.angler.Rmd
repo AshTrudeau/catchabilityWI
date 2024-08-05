@@ -219,7 +219,7 @@ data.list<-list(N=nrow(data.indexed),
                 )
 y<-data.list$lmbCatch
 
-fit_no_zinf<-stan(file="varying.effects.beta.stan",
+fit_vary_slope<-stan(file="varying.effects.beta.stan",
                  data=data.list,
                  #init=hier.inits,
                  control=list(stepsize=0.1, max_treedepth=15),
@@ -229,5 +229,6 @@ fit_no_zinf<-stan(file="varying.effects.beta.stan",
                  cores=4,
                  refresh=0)
 
+launch_shinystan(fit_vary_slope)
 ```
 

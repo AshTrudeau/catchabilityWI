@@ -49,7 +49,7 @@ parameters {
   matrix[2, A] angler_z_raw;         // matrix of intercepts and slopes for each angler
   vector<lower=0>[2] sigma_angler;   // standard deviation for intercept and slope among lakes
   vector[2] angler_global;           // 'global' intercept and slope for angler effect
-  cholesky_factor_corr[A] A_corr;    // Cholesky factor of correlation matrix
+  cholesky_factor_corr[2] A_corr;    // Cholesky factor of correlation matrix
   
   real mu_date;                     // global mean date
   real mu_lake;                     // global mean lake
@@ -98,7 +98,7 @@ transformed parameters{
     date_effect = mu_date + sigma_date * date_z_raw;
   }
   for(l in 1:L){
-    lake_effect = mu_lake + sigma_lake * date_z_raw;
+    lake_effect = mu_lake + sigma_lake * lake_z_raw;
   }
   
 
