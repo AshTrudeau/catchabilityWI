@@ -6,9 +6,21 @@
 // assumed predictor of catch and under (some) management influence. 
 
 // update since noncentered.hierarchical.LINEARIZED: random slope by angler on logPopDensity_sc with 
+// update since varying.beta.by.angler.Rmd: adding zinf
 
 // random effects are unbalanced and not nested
 // working on adding varying effect of angler on beta
+
+functions {
+  int num_zeros(array[] int lmbCatch) {
+    int sum=0;
+    for(n in 1:size(lmbCatch)){
+      sum += (lmbCatch[n] == 0);
+    }
+    return sum;
+  }
+}
+
 
 data {
   // number of observations (205)
@@ -40,6 +52,23 @@ data {
 
 }
 
+transformed data{
+  
+  int<lower=0> N_zero = num_zeros(lmbCatch);
+  array[N - N_zero] int<lower=1> lmbCatch_nonzero;
+  int N_nonzero = 0;
+  
+  for(n in 1:N){
+    if (lmbCatch[n]!=0) {
+      N_nonzero += 1;
+      lmbCatch_nonzero[N_nonzero] = lmbCatch[n];
+    }
+    
+    }
+    
+}
+
+
 
 parameters {
   // I want different estimates of q for different anglers, dates, and lakes, as well as an overall mean q
@@ -58,6 +87,7 @@ parameters {
   real<lower=0> sigma_lake;
 
   real<lower=0> phi;                 ////likelihood/population deviance
+  real<lower=0, upper=1> theta;       // zinf term
   
   // population estimate
   vector<lower=0>[L] PE;
@@ -77,6 +107,7 @@ transformed parameters{
   popDensity = PE ./ surfaceArea;
   log_popDensity = log(popDensity);
   log_popDensity_sc = (log_popDensity-mean(log_popDensity))/sd(log_popDensity);
+  
   
   // for model fit
   // this is for angler random intercept and slope (beta)
@@ -107,7 +138,11 @@ transformed parameters{
 
 model {
   
-  array[N] real logCatchHat;
+  //array[N] real logCatchHat;
+  array[N_zero] real logCatchHat_zero;
+  array[N_nonzero] real logCatchHat_nonzero;
+
+
 
   //for population estimate, Poisson approximation of hypergeometric distribution
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
@@ -140,12 +175,20 @@ model {
   
   
   
-  for(i in 1:N){
-    logCatchHat[i] = log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]];
+  for(i in 1:N_nonzero){
+    logCatchHat_nonzero[i] = log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]];
   }
   
+    for(i in 1:N_zero){
+    logCatchHat_zero[i] = log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]];
+  }
+
+  
   // likelihood
-  lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
+  target += N_zero * log_sum_exp(log(theta), log1m(theta) + neg_binomial_2_log_lpmf(0 | logCatchHat_zero, phi));
+  target += N_nonzero * log1m(theta);
+
+  lmbCatch_nonzero ~ neg_binomial_2_log(logCatchHat_nonzero, phi);
   
 }
 
@@ -153,17 +196,13 @@ generated quantities{
   
   matrix[2,2] omega;
   array[N] int catch_pred;
-  vector[N] log_lik;
-  
+  int<lower=0, upper=1> zero;
   
   omega = multiply_lower_tri_self_transpose(A_corr);
   
-    for(i in 1:N){
-    catch_pred[i]=neg_binomial_2_log_rng(log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]],phi);
-  }
-  
   for(i in 1:N){
-    log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i] | log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]], phi);
+    zero=bernoulli_rng(theta);
+    catch_pred[i]=(1-zero)*neg_binomial_2_log_rng(log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]],phi);
   }
 
 

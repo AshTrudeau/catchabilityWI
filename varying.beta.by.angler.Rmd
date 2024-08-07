@@ -203,6 +203,9 @@ data.indexed<-data.join%>%
 
 ```
 
+
+
+
 ```{r}
 data.list<-list(N=nrow(data.indexed),
                 A=max(data.indexed$A),
@@ -229,6 +232,17 @@ fit_vary_slope<-stan(file="varying.effects.beta.stan",
                  iter=3000,
                  cores=4,
                  refresh=0)
+
+post_vary_slope<-extract(fit_vary_slope)
+ppc_dens_overlay(data.list$lmbCatch, post_vary_slope$posterior_pred_check[c(1:100),])
+
+log_lik_vary_slope<-extract_log_lik(fit_vary_slope, merge_chains=FALSE)
+r_eff_vary_slope<-relative_eff(exp(log_lik_vary_slope))
+
+loo_vary_slope<-loo(log_lik_vary_slope, r_eff=r_eff_vary_slope, cores=4)
+
+print(loo_vary_slope)
+
 
 #launch_shinystan(fit_vary_slope)
 post<-extract(fit_vary_slope)
@@ -375,8 +389,18 @@ fit_vanilla<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
 post_vanilla<-extract(fit_vanilla)
 ppc_dens_overlay(data.list$lmbCatch, post_vanilla$posterior_pred_check[c(1:100),])
 
-```
+log_lik_vanilla<-extract_log_lik(fit_vanilla, merge_chains=FALSE)
+r_eff_vanilla<-relative_eff(exp(log_lik_vanilla))
 
+loo_vanilla<-loo(log_lik_vanilla, r_eff=r_eff_vanilla, cores=4)
+
+print(loo_vanilla)
+print(loo_vary_slope)
+
+comp<-loo_compare(loo_vanilla, loo_vary_slope)
+print(comp)
+```
+No important difference
 
 
 Try generating new random effects? see how different it is
@@ -401,3 +425,176 @@ ppc_dens_overlay(data.list$lmbCatch, post_slope_zinf$catch_pred[c(1:100),])
 
 add zinf?
 lol no
+
+Model comparison with Pareto-smoothed importance sampling LOO (PSIS-LOO)
+
+Random slopes did not improve the model fit
+
+Testing random effects
+
+specifying initial values might help
+
+```{r}
+hier.inits<-function(){
+  q_mu=rlnorm(1, -2, 0.5)
+  beta=rlnorm(1, 0, 0.5)
+  phi=runif(1, min=0, max=10000)
+  mu_q_a=rnorm(1, -1,0.5)
+  mu_q_d=rnorm(1, -1,0.5)
+  mu_q_l=rnorm(1, -1,0.5)
+  sigma_q_a=rexp(1, 7)
+  sigma_q_d=rexp(1, 7)
+  sigma_q_l=rexp(1, 7)
+  init<-list(q_mu=q_mu,
+             beta=beta,
+             phi=phi,
+             mu_q_a=mu_q_a,
+             mu_q_d=mu_q_d,
+             mu_q_l=mu_q_l,
+             sigma_q_a=sigma_q_a,
+             sigma_q_d=sigma_q_d,
+             sigma_q_l=sigma_q_l)
+  return(init)
+}
+
+
+```
+
+
+```{r}
+fit_full<-stan(file="noncentered.hierarchical.LINEARIZED.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_fit_full<-extract_log_lik(fit_full, merge_chains=FALSE)
+r_eff_full<-relative_eff(exp(log_lik_fit_full))
+loo_full<-loo(log_lik_fit_full, r_eff=r_eff_full, cores=4)
+
+
+fit_mean_q<-stan(file="model_test_mean_q.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_mean_q<-extract_log_lik(fit_mean_q, merge_chains=FALSE)
+r_eff_mean_q<-relative_eff(exp(log_lik_mean_q))
+loo_mean_q<-loo(log_lik_mean_q, r_eff=r_eff_mean_q, cores=4)
+# yikes that's real bad on the diagnostics
+
+fit_angler_only<-stan(file="model_test_angler_only.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_angler_only<-extract_log_lik(fit_angler_only, merge_chains=FALSE)
+r_eff_angler_only<-relative_eff(exp(log_lik_angler_only))
+loo_angler_only<-loo(log_lik_angler_only, r_eff=r_eff_angler_only, cores=4)
+
+
+fit_date_only<-stan(file="model_test_date_only.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_date_only<-extract_log_lik(fit_date_only, merge_chains=FALSE)
+r_eff_date_only<-relative_eff(exp(log_lik_date_only))
+loo_date_only<-loo(log_lik_date_only, r_eff=r_eff_date_only, cores=4)
+
+
+fit_lake_only<-stan(file="model_test_lake_only.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_lake_only<-extract_log_lik(fit_lake_only, merge_chains=FALSE)
+r_eff_lake_only<-relative_eff(exp(log_lik_lake_only))
+loo_lake_only<-loo(log_lik_lake_only, r_eff=r_eff_lake_only, cores=4)
+
+
+fit_angler_date<-stan(file="model_test_angler_date.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_angler_date<-extract_log_lik(fit_angler_date, merge_chains=FALSE)
+r_eff_angler_date<-relative_eff(exp(log_lik_angler_date))
+loo_angler_date<-loo(log_lik_angler_date, r_eff=r_eff_angler_date, cores=4)
+
+
+fit_angler_lake<-stan(file="model_test_angler_lake.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_angler_lake<-extract_log_lik(fit_angler_lake, merge_chains=FALSE)
+r_eff_angler_lake<-relative_eff(exp(log_lik_angler_lake))
+loo_angler_lake<-loo(log_lik_angler_lake, r_eff=r_eff_angler_lake, cores=4)
+
+
+
+
+fit_date_lake<-stan(file="model_test_date_lake.stan",
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_date_lake<-extract_log_lik(fit_date_lake, merge_chains=FALSE)
+r_eff_date_lake<-relative_eff(exp(log_lik_date_lake))
+loo_date_lake<-loo(log_lik_date_lake, r_eff=r_eff_date_lake, cores=4)
+
+
+comp<-loo_compare(loo_full, loo_angler_only, loo_date_only, loo_lake_only, loo_angler_date, loo_angler_lake, loo_date_lake, loo_vary_slope)
+print(comp)
+
+
+```
+
+Yeah, the full model is the best fit, though a little close to the one with just angler and date. I'll keep lake in there with the goal of comparing its (lack of) an effect with the other two random effects. (or, lack of an effect outside of population density)
+
+when the varying slope model is included, it is the best fit, but negligibly next to the intercepts-only model. 
+
+```{r}
+launch_shinystan(fit_full)
+```
+
