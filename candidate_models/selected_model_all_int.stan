@@ -1,6 +1,6 @@
 //
 
-// comparing results with different priors
+// This is the model that was selected based on LOO CV
 
 // This model estimates bass population density using mark recapture data from 13 lakes. 
 // These estimates are then used as predictors in the catch equation, catch = effort * catchability * population density^beta, 
@@ -20,9 +20,8 @@ data {
   int<lower=1> D;
   // number of lakes (13)
   int<lower=1> L; 
-    // number of predictions (all observations)
-  // number of predictions for plots
 
+  
   // all observations of catch (response)
   array[N] int<lower=0> lmbCatch;
   
@@ -40,7 +39,6 @@ data {
   int sumRt[L];
   
 
-  
 }
 
 
@@ -85,6 +83,7 @@ transformed parameters{
   array[D] real log_q_d;
   array[L] real log_q_l;
   
+  
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;
@@ -97,19 +96,20 @@ transformed parameters{
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
+// tried again 8/7, this time doing it more correctly. Still had divergent transitions
   for(a in 1:A){
-    log_q_a[a] =log_mu_q_a + sigma_q_a * q_a_raw[a];
+    log_q_a[a] =  log_mu_q_a + sigma_q_a * q_a_raw[a];
   }
   for(d in 1:D){
     log_q_d[d] = log_mu_q_d + sigma_q_d * q_d_raw[d];
   }
   for(l in 1:L){
-    log_q_l[l] = log_mu_q_l + sigma_q_l * q_l_raw[l];
+    log_q_l[l] =  log_mu_q_l + sigma_q_l * q_l_raw[l];
   }
 
 for(i in 1:N){
 
-  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
+  logCatchHat[i] = log_effort[i] +  log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
 
@@ -119,33 +119,29 @@ model {
   
   //for population estimate, Poisson approximation of hypergeometric distribution
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
-  target += poisson_lpmf(sumRt | sumCtMt ./ PE);
-  target += lognormal_lpdf(popDensity | 0,2);
   
-  target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
-
-  target += std_normal_lpdf(q_a_raw);
-  target += std_normal_lpdf(q_d_raw);
-  target += std_normal_lpdf(q_l_raw);
+  sumRt ~ poisson(sumCtMt ./ PE);
+  popDensity ~ lognormal(0,2);
   
-  target += normal_lpdf(log_q_mu | 0,1);
-  // testing sensitivity of priors
-  //target += student_t_lpdf(log_q_mu |3, 0,1);
-
-
-  target += normal_lpdf(log_mu_q_a | 0,1);
-  target += normal_lpdf(log_mu_q_d | 0,1);
-  target += normal_lpdf(log_mu_q_l | 0,1);
+  lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
-
-  target += exponential_lpdf(sigma_q_a | 0.25);
-  target += exponential_lpdf(sigma_q_d | 0.25);
-  target += exponential_lpdf(sigma_q_l | 0.25);
+  log_mu_q_a ~ normal(0,1);
+  log_mu_q_d ~ normal(0,1);
+  log_mu_q_l ~ normal(0,1);
   
-  target += gamma_lpdf(phi| 1,2);
-
-  target += lognormal_lpdf(beta | -1,1);
+  q_a_raw ~ normal(0,1);
+  q_d_raw ~ normal(0,1);
+  q_l_raw ~ normal(0,1);
   
+  sigma_q_a ~ exponential(1);
+  sigma_q_d ~ exponential(1);
+  sigma_q_l ~ exponential(1);
+  
+  log_q_mu ~ normal(0,1);
+  
+  phi ~ gamma(1,2);
+  beta ~ lognormal(-1, 1);
+
 }
 
 generated quantities{

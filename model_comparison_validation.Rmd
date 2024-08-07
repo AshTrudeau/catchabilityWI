@@ -585,6 +585,198 @@ ggplot()+
 The lake random effect may be more affected by the prior dist
 
 ```{r}
+fit_prior_check<-stan(file=here("candidate_models","prior_check_all_int.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post.prior.check<-extract(fit_prior_check)
+
+sigma.q.a.post.pc<-post.prior.check$sigma_q_a
+sigma.q.d.post.pc<-post.prior.check$sigma_q_d
+sigma.q.l.post.pc<-post.prior.check$sigma_q_l
+
+
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray")+
+  geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q")+
+  theme_bw()
+
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray")+
+  geom_density(aes(x=sigma.q.a.post.pc), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post.pc), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post.pc), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q")+
+  theme_bw()
+
+
+```
+
+Very little difference apparent
+
+Let's drop observations from the three lakes with only 1 recap
+
+```{r}
+`%!in%`<-Negate(`%in%`)
+
+data.drop<-data.indexed%>%
+  filter(lakeID%!in%c("HT","LT","WB"))
+# now only 132 observations
+
+fish_pe_recap_drop<-filter(fish_pe_recap, lakeID%!in%c("HT","LT","WB"))
+
+lakeID_drop<-data.frame(lakeID=fish_pe_recap_drop$lakeID,
+                   L=seq(1:10),
+                   sumCtMt=fish_pe_recap_drop$sumCtMt,
+                   sumRt=fish_pe_recap_drop$sumRt,
+                   surfaceArea=fish_pe_recap_drop$surfaceArea)
+
+anglerID_drop<-data.frame(caughtBy=unique(data.drop$caughtBy),
+                     A=seq(1:16))
+
+dateID_drop<-data.frame(date=unique(data.drop$date),
+                   D=seq(1:30))
+
+data.indexed.drop<-data.drop%>%
+  left_join(dateID_drop, by="date")%>%
+  left_join(anglerID_drop, by="caughtBy")%>%
+  left_join(lakeID_drop, by="lakeID")%>%
+  mutate(log_effort=log(effort))
+
+
+
+data.list.drop<-list(N=nrow(data.indexed.drop),
+                A=max(data.indexed.drop$A),
+                D=max(data.indexed.drop$D),
+                L=max(data.indexed.drop$L),
+                AA=data.indexed.drop$A,
+                DD=data.indexed.drop$D,
+                LL=data.indexed.drop$L,
+                lmbCatch=data.indexed.drop$lmbCatch,
+                log_effort=data.indexed.drop$log_effort,
+                sumCtMt=lakeID_drop$sumCtMt,
+                sumRt=lakeID_drop$sumRt,
+                surfaceArea=lakeID_drop$surfaceArea
+                )
+fit_drop<-stan(file=here("candidate_models","noncentered.hierarchical.LINEARIZED.stan"),
+                 data=data.list.drop,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+
+```
+
+do checks and look at posteriors
+
+```{r}
+post.drop<-extract(fit_drop)
+ppc_dens_overlay(data.list.drop$lmbCatch, post.drop$posterior_pred_check[c(1:100),])
+
+```
+```{r}
+popDensity.post.drop<-post.drop$popDensity
+beta.post.drop<-post.drop$beta
+phi.post.drop<-post.drop$phi
+sigma.q.a.post.drop<-post.drop$sigma_q_a
+sigma.q.d.post.drop<-post.drop$sigma_q_d
+sigma.q.l.post.drop<-post.drop$sigma_q_l
+
+popDensity.post.drop.df<-as.data.frame(popDensity.post.drop)
+names(popDensity.post.drop.df)<-paste0("lake_", seq(1:10))
+
+popDensity.plot<-popDensity.post.drop.df%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+
+ggplot()+
+  #geom_density(popDensity.prior, fill="gray")+
+  geom_density(aes(x=popDensity.prior), fill="gray")+
+  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
+  xlim(0,100)+
+  theme_bw()
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=beta.prior), fill="gray")+
+  geom_density(aes(x=beta.post.drop), fill="lightblue")+
+  ggtitle("beta")+
+  theme_bw()
+  
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=phi.prior), fill="gray")+
+  geom_density(aes(x=phi.post.drop), fill="lightblue")+
+  ggtitle("phi")+
+  theme_bw()
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray")+
+  geom_density(aes(x=sigma.q.a.post.drop), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post.drop), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post.drop), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q")+
+  theme_bw()
+
+```
+
+With the better PEs (and less data) the results are qualitatively similar, but parameters are much closer to their priors. 
+
+Check a cleaned up version of the all-intercepts model that drops the unnecessary log_mu_q_a,d,l
+
+ok that didn't work. I made a forum post to get some thoughts on what's happening there
+
+```{r}
+fit_selected<-stan(file=here("candidate_models","selected_model_all_int.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_selected<-extract_log_lik(fit_selected, merge_chains=FALSE)
+r_eff_selected<-relative_eff(exp(log_lik_selected))
+
+loo_selected<-loo(log_lik_selected, r_eff=r_eff_selected, cores=4)
+
+print(loo_selected)
+
+```
+
+```{r}
+print(loo_all_int)
+```
+
+```{r}
+summary(fit_all_int, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l"))
+```
+
+
+
+```{r}
+summary(fit_selected, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l"))
 
 ```
 
