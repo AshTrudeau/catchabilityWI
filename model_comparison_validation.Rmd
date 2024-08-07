@@ -10,6 +10,8 @@ pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnor
 ```
 
 Pull raw data from MFE database
+IMPORTANT NOTE: Made fix to problem with duplicate creel members that is not present in other (older) scripts
+
 ```{r}
 rm(list=ls())
 
@@ -64,6 +66,13 @@ AMK.lake.date<-c("DS_20190613",
                  "NH_20190713")
 
 long.crew<-fishSamples%>%
+    mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))%>%
+  mutate(crewFix.ALK=ifelse(lakeID_date%in%ALK.lake.date & grepl("AK", crew), 1, 0),
+         crewFix.AMK=ifelse(lakeID_date%in%AMK.lake.date & grepl("AK", crew), 1, 0))%>%
+  mutate(crew=ifelse(crewFix.ALK==1, str_replace(crew, "AK", "ALK"), crew),
+         crew=ifelse(crewFix.AMK==1, str_replace(crew, "AK", "AMK"), crew))%>%
   group_by(sampleID)%>%
   summarize(crew=unique(crew),
             effort=unique(effort))%>%
@@ -73,14 +82,8 @@ long.crew<-fishSamples%>%
   mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))%>%
   mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
          lakeID=str_split_fixed(sampleID, "_", 2)[,1],
-         lakeID_date=paste(lakeID, date, sep="_"))%>%
-  mutate(caughtBy=ifelse(lakeID_date%in%AMK.lake.date, "AMK",
-                         ifelse(lakeID_date%in%ALK.lake.date, "ALK", caughtBy)))
-  
- #long.crew$date<-NULL
- #long.crew$lakeID<-NULL
- #long.crew$lakeID_date<-NULL
- 
+         lakeID_date=paste(lakeID, date, sep="_"))
+
  
  all.data<-fishInfo%>%
   mutate(year=year(dateSample))%>%
@@ -100,7 +103,9 @@ full.data<-long.crew%>%
   left_join(cpue, by=c("sampleID", "caughtBy"))%>%
   mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))
 
+# looking at some outliers
 
+View(full.data)
 
 # join on mark recap data (sumCtRt and sumRt) and surface area
 
@@ -200,6 +205,386 @@ data.indexed<-data.join%>%
   mutate(log_effort=log(effort))%>%
   rename("lmbCatch"=nCaught)
 
+data.list<-list(N=nrow(data.indexed),
+                A=max(data.indexed$A),
+                D=max(data.indexed$D),
+                L=max(data.indexed$L),
+                AA=data.indexed$A,
+                DD=data.indexed$D,
+                LL=data.indexed$L,
+                lmbCatch=data.indexed$lmbCatch,
+                log_effort=data.indexed$log_effort,
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea
+                )
+
+
+```
+functions 
+(function to run all loo steps didn't work for some reason)
+```{r}
+prop_zero<-function(x) mean(x==0)
+
+```
+
+
+Fit maximal model with random intercepts by angler, date, and lake, and random beta by angler
+
+```{r}
+fit_vary_slope<-stan(file=here("candidate_models","varying.effects.beta.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_vary_slope<-extract(fit_vary_slope)
+ppc_dens_overlay(data.list$lmbCatch, post_vary_slope$catch_pred[c(1:100),])
+
+log_lik_vary_slope<-extract_log_lik(fit_vary_slope, merge_chains=FALSE)
+r_eff_vary_slope<-relative_eff(exp(log_lik_vary_slope))
+
+loo_vary_slope<-loo(log_lik_vary_slope, r_eff=r_eff_vary_slope, cores=4)
+
+print(loo_vary_slope)
+
+loo_vary_slope
+
+```
+
+Where are these outliers?
+
+```{r}
+pointwise<-loo_vary_slope$pointwise
+
+Nrow<-seq(1:nrow(pointwise))
+
+n.pointwise<-cbind(Nrow, pointwise)
+
+n.pointwise[n.pointwise[,6]>0.7,]
+```
+obs 13, 130, and 172
+
+```{r}
+data.problem<-data.indexed[c(13, 130, 172),]
+```
+
+These are observations from Chelsea and Alex that are just outlier catch rates. Chelsea had a really good day on Bay, Alex had really good days on Lone Tree and White Birch
+Fit with only random intercepts
+working off of this for ppc: https://cran.r-project.org/web/packages/bayesplot/vignettes/graphical-ppcs.html
+
+```{r}
+fit_all_int<-stan(file=here("candidate_models","noncentered.hierarchical.LINEARIZED.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+log_lik_all_int<-extract_log_lik(fit_all_int, merge_chains=FALSE)
+r_eff_all_int<-relative_eff(exp(log_lik_all_int))
+loo_all_int<-loo(log_lik_all_int, r_eff=r_eff_all_int, cores=4, save_psis=TRUE)
+
+post_all_int<-extract(fit_all_int)
+ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])+xlim(0,20)
+
+ppc_hist(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:5),])
+
+ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="prop_zero", binwidth=0.005)
+ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="max", binwidth=0.005)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
+
+print(loo_all_int)
+plot(loo_all_int)
+
+yrep=post_all_int$posterior_pred_check
+
+ppc_loo_pit_qq(y=data.list$lmbCatch, yrep=yrep,
+               psis_object=loo_all_int$psis_object)
+
+ppc_loo_pit_overlay(y=data.list$lmbCatch, yrep=yrep,
+               psis_object=loo_all_int$psis_object)
+```
+```{r}
+pointwise<-loo_all_int$pointwise
+
+Nrow<-seq(1:nrow(pointwise))
+
+n.pointwise<-cbind(Nrow, pointwise)
+
+n.pointwise[n.pointwise[,6]>0.7,]
+
+```
+That was just a good day for Chelsea on Bay Lake
+
+Model slightly overpredicts zero catches on average
+Some of the iteration's maximum catches are pretty wild, but centered on observations. 
+whoa, loo_pit looks really bad. Doing some reading, it looks like this is not a good test for discrete data. 
+
+helpful glossary https://mc-stan.org/loo/reference/loo-glossary.html 
+
+
+```{r}
+fit_mean_q<-stan(file=here("candidate_models","model_test_mean_q.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_mean_q<-extract(fit_mean_q)
+ppc_dens_overlay(data.list$lmbCatch, post_mean_q$posterior_pred_check[c(1:100),])
+
+log_lik_mean_q<-extract_log_lik(fit_mean_q, merge_chains=FALSE)
+r_eff_mean_q<-relative_eff(exp(log_lik_mean_q))
+
+loo_mean_q<-loo(log_lik_mean_q, r_eff=r_eff_mean_q, cores=4)
+
+print(loo_mean_q)
+
+ppc_dens_overlay(data.list$lmbCatch, post_mean_q$posterior_pred_check[c(1:100),])+xlim(0,20)
+
+```
+This model does really badly, which isn't unexpected
+
+
+```{r}
+fit_angler_only<-stan(file=here("candidate_models","model_test_angler_only.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_angler_only<-extract(fit_angler_only)
+ppc_dens_overlay(data.list$lmbCatch, post_angler_only$posterior_pred_check[c(1:100),])
+
+log_lik_angler_only<-extract_log_lik(fit_angler_only, merge_chains=FALSE)
+r_eff_angler_only<-relative_eff(exp(log_lik_angler_only))
+
+loo_angler_only<-loo(log_lik_angler_only, r_eff=r_eff_angler_only, cores=4)
+
+print(loo_angler_only)
+
+```
+
+```{r}
+fit_date_only<-stan(file=here("candidate_models","model_test_date_only.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_date_only<-extract(fit_date_only)
+ppc_dens_overlay(data.list$lmbCatch, post_date_only$posterior_pred_check[c(1:100),])
+
+log_lik_date_only<-extract_log_lik(fit_date_only, merge_chains=FALSE)
+r_eff_date_only<-relative_eff(exp(log_lik_date_only))
+
+loo_date_only<-loo(log_lik_date_only, r_eff=r_eff_date_only, cores=4)
+
+print(loo_date_only)
+
+```
+
+```{r}
+fit_lake_only<-stan(file=here("candidate_models","model_test_lake_only.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_lake_only<-extract(fit_lake_only)
+ppc_dens_overlay(data.list$lmbCatch, post_lake_only$posterior_pred_check[c(1:100),])
+
+log_lik_lake_only<-extract_log_lik(fit_lake_only, merge_chains=FALSE)
+r_eff_lake_only<-relative_eff(exp(log_lik_lake_only))
+
+loo_lake_only<-loo(log_lik_lake_only, r_eff=r_eff_lake_only, cores=4)
+
+print(loo_lake_only)
+
+```
+
+```{r}
+fit_angler_date<-stan(file=here("candidate_models","model_test_angler_date.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_angler_date<-extract(fit_angler_date)
+ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:100),])
+
+log_lik_angler_date<-extract_log_lik(fit_angler_date, merge_chains=FALSE)
+r_eff_angler_date<-relative_eff(exp(log_lik_angler_date))
+
+loo_angler_date<-loo(log_lik_angler_date, r_eff=r_eff_angler_date, cores=4)
+
+print(loo_angler_date)
+
+```
+
+```{r}
+fit_angler_lake<-stan(file=here("candidate_models","model_test_angler_lake.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_angler_lake<-extract(fit_angler_lake)
+ppc_dens_overlay(data.list$lmbCatch, post_angler_lake$posterior_pred_check[c(1:100),])
+
+log_lik_angler_lake<-extract_log_lik(fit_angler_lake, merge_chains=FALSE)
+r_eff_angler_lake<-relative_eff(exp(log_lik_angler_lake))
+
+loo_angler_lake<-loo(log_lik_angler_lake, r_eff=r_eff_angler_lake, cores=4)
+
+print(loo_angler_lake)
+
+```
+
+```{r}
+fit_date_lake<-stan(file=here("candidate_models","model_test_date_lake.stan"),
+                 data=data.list,
+                 #init=hier.inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post_date_lake<-extract(fit_date_lake)
+ppc_dens_overlay(data.list$lmbCatch, post_date_lake$posterior_pred_check[c(1:100),])
+
+log_lik_date_lake<-extract_log_lik(fit_date_lake, merge_chains=FALSE)
+r_eff_date_lake<-relative_eff(exp(log_lik_date_lake))
+
+loo_date_lake<-loo(log_lik_date_lake, r_eff=r_eff_date_lake, cores=4)
+
+print(loo_date_lake)
+
+```
+```{r}
+comp<-loo_compare(loo_vary_slope, loo_all_int, loo_angler_only, loo_date_only, loo_lake_only, loo_angler_date, loo_angler_lake, loo_date_lake)
+
+print(comp)
+
+```
+
+The intercept-only (full) model is the best fitting, with a similar fit to the model with varying slopes. 
+
+Compare priors to posteriors
+```{r}
+
+popDensity.prior<-rlnorm(1000, 0, 2)
+beta.prior<-rlnorm(1000,-1,1)
+phi.prior<-rgamma(1000, 1, 2)
+sigma.q.priors<-rexp(1000, 1)
+
+post<-extract(fit_all_int, inc_warmup=FALSE)
+
+popDensity.post<-post$popDensity
+beta.post<-post$beta
+phi.post<-post$phi
+sigma.q.a.post<-post$sigma_q_a
+sigma.q.d.post<-post$sigma_q_d
+sigma.q.l.post<-post$sigma_q_l
+
+popDensity.post.df<-as.data.frame(popDensity.post)
+names(popDensity.post.df)<-paste0("lake_", seq(1:13))
+
+popDensity.plot<-popDensity.post.df%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+
+ggplot()+
+  #geom_density(popDensity.prior, fill="gray")+
+  geom_density(aes(x=popDensity.prior), fill="gray")+
+  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
+  xlim(0,100)+
+  theme_bw()
+```
+
+popDensity.prior<-rlnorm(1000, 0, 2)
+beta.prior<-rlnorm(1000,-1,1)
+phi.prior<-rgamma(1000, 1, 2)
+sigma.q.priors<-rexp(1000, 1)
+
+post<-extract(fit_all_int, inc_warmup=FALSE)
+
+popDensity.post<-post$popDensity
+beta.post<-post$beta
+phi.post<-post$phi
+sigma.q.a.post<-post$sigma_q_a
+sigma.q.d.post<-post$sigma_q_d
+sigma.q.l.post<-post$sigma_q_l
+
+```{r}
+ggplot()+
+  geom_density(aes(x=beta.prior), fill="gray")+
+  geom_density(aes(x=beta.post), fill="lightblue")+
+  ggtitle("beta")+
+  theme_bw()
+  
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=phi.prior), fill="gray")+
+  geom_density(aes(x=phi.post), fill="lightblue")+
+  ggtitle("phi")+
+  theme_bw()
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray")+
+  geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q")+
+  theme_bw()
+
+```
+The lake random effect may be more affected by the prior dist
+
+```{r}
 
 ```
 

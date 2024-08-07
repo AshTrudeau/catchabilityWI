@@ -598,3 +598,8 @@ when the varying slope model is included, it is the best fit, but negligibly nex
 launch_shinystan(fit_full)
 ```
 
+
+```{r}
+plot(loo_full)
+```
+
