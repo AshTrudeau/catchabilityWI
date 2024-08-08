@@ -212,7 +212,9 @@ data.list<-list(N=nrow(data.indexed),
                 log_effort=data.indexed$log_effort,
                 sumCtMt=lakeID$sumCtMt,
                 sumRt=lakeID$sumRt,
-                surfaceArea=lakeID$surfaceArea
+                surfaceArea=lakeID$surfaceArea,
+                z_scores = c(1.645, 0.674, 0, -0.674, -1.645),
+                popDensity_pred=seq(0, 100, by=10)
                 )
 
 
@@ -438,4 +440,34 @@ ggplot(angler.pred.long)+
   ylab("Predicted mean catch")
 ggsave(here::here("output_selected_model","figures","angler.mean.pred.catch.png"), height=6, width=4)
 ```
+That's not very useful for readers; instead do quantiles
 
+```{r}
+quant.catch.df<-as.data.frame(post_gen$predict_quantile_catch)
+
+names(quant.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
+
+quant.catch.long<-quant.catch.df%>%
+  pivot_longer(cols=everything(), names_to="Angler skill", values_to="Mean catch")%>%
+  mutate(`Angler skill`=factor(`Angler skill`, levels=c("5th", "25th", "50th", "75th", "95th")))
+
+quant.catch.sum<-quant.catch.long%>%
+  group_by(`Angler skill`)%>%
+  summarize(mean=mean(`Mean catch`),
+            median=median(`Mean catch`),
+            sd=sd(`Mean catch`),
+            upper=mean+1.96*sd,
+            lower=mean-1.96*sd)
+
+ggplot(quant.catch.long)+
+  geom_violin(aes(x=`Angler skill`, y=`Mean catch`), fill=futurama[7], adjust=2)+
+  geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=mean), size=3)+
+  geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=median), size=3, color="gray")+
+  coord_flip()+
+  xlab("Angler catch power percentile")+
+  ylab("Predicted mean catch")+
+  theme_bw()
+ggsave(here("output_selected_model","figures", "percentile.catch.violin.png"), height=4, width=6)
+```
+
+Finally for these quantiles of anglers across a range of population densities

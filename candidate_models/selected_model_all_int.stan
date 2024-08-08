@@ -20,6 +20,9 @@ data {
   int<lower=1> D;
   // number of lakes (13)
   int<lower=1> L; 
+  
+  vector[5] z_scores;
+  vector[11] popDensity_pred;
 
   
   // all observations of catch (response)
@@ -153,8 +156,10 @@ generated quantities{
   real sigma;
   
   array[A] int predict_angler_catch;
-  vector[5] real log_q_a_quantiles;
+  array[5] real quantile_angler;
+  array[5] int predict_quantile_catch;
   
+
 
   // for(n in 1:N){
   //   posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
@@ -173,6 +178,19 @@ generated quantities{
   predict_angler_catch[i] = neg_binomial_2_log_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
   }
   
+  // this gives log_q_a values for 95, 75, 5, 25, and 5 percentiles
+  for(i in 1:5){
+  quantile_angler[i] = z_scores[i]*sigma_q_a + log_mu_q_a;
+  }
+  
+  // predict their mean catch
+  
+  for(i in 1:5){
+    predict_quantile_catch[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+  }
+  
+  
+
   
 
 }
