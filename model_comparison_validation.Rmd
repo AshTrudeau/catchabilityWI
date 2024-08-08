@@ -691,62 +691,114 @@ The lake random effect may be more affected by the prior dist
 
 ```{r}
 # much wider prior (sigma~exp(0.25))
-fit_prior_check<-stan(file=here("candidate_models","prior_check_all_int.stan"),
+fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_wide_sigma.stan"),
                  data=data.list,
-                 #init=init.phi,
+                 init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_wide_sigma.rds"))
 
 post.prior.check<-extract(fit_prior_check)
 
-sigma.q.a.post.pc<-post.prior.check$sigma_q_a
-sigma.q.d.post.pc<-post.prior.check$sigma_q_d
-sigma.q.l.post.pc<-post.prior.check$sigma_q_l
+sigma.q.a.post.pc.wide<-post.prior.check$sigma_q_a
+sigma.q.d.post.pc.wide<-post.prior.check$sigma_q_d
+sigma.q.l.post.pc.wide<-post.prior.check$sigma_q_l
 
 
 ggplot()+
   geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post.pc), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post.pc), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post.pc), fill="lightpink", alpha=0.5)+
+  geom_density(aes(x=sigma.q.a.post.pc.wide), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post.pc.wide), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post.pc.wide), fill="lightpink", alpha=0.5)+
   ggtitle("sigma.q")+
   theme_bw()
 ggsave(here("output_selected_model", "prior_checks", "check_sigma_wider_prior.png"))
 
 # much narrower prior (sigma~exp(10))
-fit_prior_check<-stan(file=here("candidate_models","prior_check_all_int.stan"),
+fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_narrow_sigma.stan"),
                  data=data.list,
-                 #init=init.phi,
+                 init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_narrow_sigma.rds"))
 
 post.prior.check<-extract(fit_prior_check)
 
-sigma.q.a.post.pc<-post.prior.check$sigma_q_a
-sigma.q.d.post.pc<-post.prior.check$sigma_q_d
-sigma.q.l.post.pc<-post.prior.check$sigma_q_l
+sigma.q.a.post.pc.narrow<-post.prior.check$sigma_q_a
+sigma.q.d.post.pc.narrow<-post.prior.check$sigma_q_d
+sigma.q.l.post.pc.narrow<-post.prior.check$sigma_q_l
 
 
 ggplot()+
   geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post.pc), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post.pc), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post.pc), fill="lightpink", alpha=0.5)+
+  geom_density(aes(x=sigma.q.a.post.pc.narrow), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post.pc.narrow), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post.pc.narrow), fill="lightpink", alpha=0.5)+
   ggtitle("sigma.q")+
   theme_bw()
 ggsave(here("output_selected_model", "prior_checks", "check_sigma_narrow_prior.png"))
 
 
 ```
-sigma values are somewhat sensitive to prior specifications, but especially the lake effect
+Beta being the other really important one
+
+```{r}
+fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_wide_beta.stan"),
+                 data=data.list,
+                 #init=init.phi,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_wide_beta.rds"))
+post.prior.check<-extract(fit_prior_check)
+
+beta.post.pc.wide<-post.prior.check$beta
+
+ggplot()+
+  geom_density(aes(x=beta.prior), fill="gray")+
+  geom_density(aes(x=beta.post.pc.wide), fill="lightblue", alpha=0.5)+
+  ggtitle("beta")+
+  theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "check_beta_wider_prior.png"))
+
+fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_narrow_beta.stan"),
+                 data=data.list,
+                 #init=init.phi,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_narrow_beta.rds"))
+
+post.prior.check<-extract(fit_prior_check)
+
+beta.post.pc.narrow<-post.prior.check$beta
+
+ggplot()+
+  geom_density(aes(x=beta.prior), fill="gray")+
+  geom_density(aes(x=beta.post.pc.narrow), fill="lightblue", alpha=0.5)+
+  ggtitle("beta")+
+  theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "check_beta_narrower_prior.png"))
+
+
+```
+
+
+Parameter distributions in the accepted model are very similar to those returned from a model with a much wider prior on that parameter. Narrower priors, of course, have a strong effect, but that's expected. 
 
 
 ```{r}
