@@ -97,6 +97,7 @@ transformed parameters{
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
 // tried again 8/7, this time doing it more correctly. Still had divergent transitions
+// forum post out to understand why, contact Chris if that doesn't help
   for(a in 1:A){
     log_q_a[a] =  log_mu_q_a + sigma_q_a * q_a_raw[a];
   }

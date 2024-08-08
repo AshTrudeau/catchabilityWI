@@ -138,9 +138,9 @@ model {
   target += normal_lpdf(log_mu_q_l | 0,1);
   
 
-  target += exponential_lpdf(sigma_q_a | 0.25);
-  target += exponential_lpdf(sigma_q_d | 0.25);
-  target += exponential_lpdf(sigma_q_l | 0.25);
+  target += exponential_lpdf(sigma_q_a | 10);
+  target += exponential_lpdf(sigma_q_d | 10);
+  target += exponential_lpdf(sigma_q_l | 10);
   
   target += gamma_lpdf(phi| 1,2);
 

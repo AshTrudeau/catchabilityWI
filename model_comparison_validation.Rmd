@@ -228,19 +228,69 @@ prop_zero<-function(x) mean(x==0)
 
 ```
 
+```{r}
+
+# phi was the main problem
+
+init.phi<-function(){
+  # narrower distribution for initial phi value (high values were breaking model fits in some chains)
+  phi=rgamma(1,3)
+  init<-list(phi=phi)
+  return(init)
+}
+
+# hier.inits<-function(){
+#   log_q_mu=rnorm(1, 0,0.5)
+#   beta=rlnorm(1, -1, 0.5)
+#   phi=rgamma(1,3)
+#   log_mu_q_a=rnorm(1, 0,0.5)
+#   log_mu_q_d=rnorm(1, 0,0.5)
+#   log_mu_q_l=rnorm(1, 0,0.5)
+#   sigma_q_a=rexp(1, 0.5)
+#   sigma_q_d=rexp(1, 0.5)
+#   sigma_q_l=rexp(1, 0.5)
+#   q_a_raw=rnorm(18,0,0.5)
+#   q_d_raw=rnorm(42,0,0.5)
+#   q_l_raw=rnorm(13,0,0.5)
+#   popDensity=rlnorm(13, 0,1.5)
+#   
+#   init<-list(log_q_mu=log_q_mu,
+#              beta=beta,
+#              phi=phi,
+#              log_mu_q_a=log_mu_q_a,
+#              log_mu_q_d=log_mu_q_d,
+#              log_mu_q_l=log_mu_q_l,
+#              sigma_q_a=sigma_q_a,
+#              sigma_q_d=sigma_q_d,
+#              sigma_q_l=sigma_q_l,
+#              q_a_raw=q_a_raw,
+#              q_d_raw=q_d_raw,
+#              q_l_raw=q_l_raw,
+#              popDensity=popDensity)
+# 
+#              
+#   return(init)
+# }
+
+```
+
 
 Fit maximal model with random intercepts by angler, date, and lake, and random beta by angler
 
 ```{r}
+set.seed(83292)
+
 fit_vary_slope<-stan(file=here("candidate_models","varying.effects.beta.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+
+saveRDS(fit_vary_slope, here("candidate_models","candidate_model_fits","fit_vary_slope.rds"))
 
 post_vary_slope<-extract(fit_vary_slope)
 ppc_dens_overlay(data.list$lmbCatch, post_vary_slope$catch_pred[c(1:100),])
@@ -253,6 +303,20 @@ loo_vary_slope<-loo(log_lik_vary_slope, r_eff=r_eff_vary_slope, cores=4)
 print(loo_vary_slope)
 
 loo_vary_slope
+
+ppc_hist(data.list$lmbCatch, post_vary_slope$catch_pred[c(1:5),])
+
+ppc_stat(data.list$lmbCatch, post_vary_slope$catch_pred, stat="prop_zero", binwidth=0.005)
+ppc_stat(data.list$lmbCatch, post_vary_slope$catch_pred, stat="max", binwidth=0.005)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_vary_slope$catch_pred[1:100,], group=data.list$AA)+xlim(0,10)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_vary_slope$catch_pred[1:100,], group=data.list$LL)+xlim(0,20)
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_vary_slope$catch_pred[1:100,], group=data.list$DD)+xlim(0,10)
+
+
+
 
 ```
 
@@ -270,7 +334,7 @@ n.pointwise[n.pointwise[,6]>0.7,]
 obs 13, 130, and 172
 
 ```{r}
-data.problem<-data.indexed[c(13, 130, 172),]
+data.problem<-data.indexed[c(13, 124, 130, 172),]
 ```
 
 These are observations from Chelsea and Alex that are just outlier catch rates. Chelsea had a really good day on Bay, Alex had really good days on Lone Tree and White Birch
@@ -278,9 +342,9 @@ Fit with only random intercepts
 working off of this for ppc: https://cran.r-project.org/web/packages/bayesplot/vignettes/graphical-ppcs.html
 
 ```{r}
-fit_all_int<-stan(file=here("candidate_models","noncentered.hierarchical.LINEARIZED.stan"),
+fit_all_int<-stan(file=here("candidate_models","model_test_all_int.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
@@ -288,23 +352,42 @@ fit_all_int<-stan(file=here("candidate_models","noncentered.hierarchical.LINEARI
                  cores=4,
                  refresh=0)
 
+saveRDS(fit_all_int, here("candidate_models","candidate_model_fits","fit_all_int.rds"))
+
 log_lik_all_int<-extract_log_lik(fit_all_int, merge_chains=FALSE)
 r_eff_all_int<-relative_eff(exp(log_lik_all_int))
 loo_all_int<-loo(log_lik_all_int, r_eff=r_eff_all_int, cores=4, save_psis=TRUE)
 
 post_all_int<-extract(fit_all_int)
 ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])+xlim(0,20)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_xlim_20.png"))
+
+ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_no_lim.png"))
+
 
 ppc_hist(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:5),])
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_hist_5_runs.png"))
+
 
 ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="prop_zero", binwidth=0.005)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "prop_zero_compare.png"))
+
 ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="max", binwidth=0.005)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "max_compare.png"))
+
 
 ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_angler_groups.png"))
+
 
 ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_lake_groups.png"))
+
 
 ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_date_groups.png"))
+
 
 print(loo_all_int)
 plot(loo_all_int)
@@ -339,13 +422,14 @@ helpful glossary https://mc-stan.org/loo/reference/loo-glossary.html
 ```{r}
 fit_mean_q<-stan(file=here("candidate_models","model_test_mean_q.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_mean_q, here("candidate_models","candidate_model_fits","fit_mean_q.rds"))
 
 post_mean_q<-extract(fit_mean_q)
 ppc_dens_overlay(data.list$lmbCatch, post_mean_q$posterior_pred_check[c(1:100),])
@@ -366,13 +450,16 @@ This model does really badly, which isn't unexpected
 ```{r}
 fit_angler_only<-stan(file=here("candidate_models","model_test_angler_only.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+
+saveRDS(fit_angler_only, here("candidate_models","candidate_model_fits","fit_angler_only.rds"))
+
 
 post_angler_only<-extract(fit_angler_only)
 ppc_dens_overlay(data.list$lmbCatch, post_angler_only$posterior_pred_check[c(1:100),])
@@ -389,13 +476,15 @@ print(loo_angler_only)
 ```{r}
 fit_date_only<-stan(file=here("candidate_models","model_test_date_only.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+
+saveRDS(fit_date_only, here("candidate_models","candidate_model_fits","fit_date_only.rds"))
 
 post_date_only<-extract(fit_date_only)
 ppc_dens_overlay(data.list$lmbCatch, post_date_only$posterior_pred_check[c(1:100),])
@@ -412,13 +501,14 @@ print(loo_date_only)
 ```{r}
 fit_lake_only<-stan(file=here("candidate_models","model_test_lake_only.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_lake_only, here("candidate_models","candidate_model_fits","fit_lake_only.rds"))
 
 post_lake_only<-extract(fit_lake_only)
 ppc_dens_overlay(data.list$lmbCatch, post_lake_only$posterior_pred_check[c(1:100),])
@@ -435,13 +525,14 @@ print(loo_lake_only)
 ```{r}
 fit_angler_date<-stan(file=here("candidate_models","model_test_angler_date.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_angler_date, here("candidate_models","candidate_model_fits","fit_angler_date.rds"))
 
 post_angler_date<-extract(fit_angler_date)
 ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:100),])
@@ -458,13 +549,15 @@ print(loo_angler_date)
 ```{r}
 fit_angler_lake<-stan(file=here("candidate_models","model_test_angler_lake.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_angler_lake, here("candidate_models","candidate_model_fits","fit_angler_lake.rds"))
+
 
 post_angler_lake<-extract(fit_angler_lake)
 ppc_dens_overlay(data.list$lmbCatch, post_angler_lake$posterior_pred_check[c(1:100),])
@@ -481,13 +574,14 @@ print(loo_angler_lake)
 ```{r}
 fit_date_lake<-stan(file=here("candidate_models","model_test_date_lake.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_date_lake, here("candidate_models","candidate_model_fits","fit_date_lake.rds"))
 
 post_date_lake<-extract(fit_date_lake)
 ppc_dens_overlay(data.list$lmbCatch, post_date_lake$posterior_pred_check[c(1:100),])
@@ -501,10 +595,16 @@ print(loo_date_lake)
 
 ```
 ```{r}
+# how does comp change if I specify simplify=FALSE?
 comp<-loo_compare(loo_vary_slope, loo_all_int, loo_angler_only, loo_date_only, loo_lake_only, loo_angler_date, loo_angler_lake, loo_date_lake)
 
-print(comp)
+print(comp, simplify=FALSE)
 
+comp.df<-as.data.frame(comp)
+comp.df$model<-c("vary_slope", "all_int","angler_only","date_only",
+                 "lake_only","angler_date","angler_lake","date_lake")
+
+write.csv(comp.df, here("candidate_models","candidate_model_comparison","loo.cv.comparison.csv"))
 ```
 
 The intercept-only (full) model is the best fitting, with a similar fit to the model with varying slopes. 
@@ -538,6 +638,8 @@ ggplot()+
   geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
   xlim(0,100)+
   theme_bw()
+
+ggsave(here("output_selected_model", "prior_checks", "popDensity_prior_check.png"))
 ```
 
 popDensity.prior<-rlnorm(1000, 0, 2)
@@ -560,7 +662,8 @@ ggplot()+
   geom_density(aes(x=beta.post), fill="lightblue")+
   ggtitle("beta")+
   theme_bw()
-  
+  ggsave(here("output_selected_model", "prior_checks", "beta_prior_check.png"))
+
 ```
 
 ```{r}
@@ -569,6 +672,7 @@ ggplot()+
   geom_density(aes(x=phi.post), fill="lightblue")+
   ggtitle("phi")+
   theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "phi_prior_check.png"))
 
 ```
 
@@ -578,16 +682,18 @@ ggplot()+
   geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
   geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
   geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
-  ggtitle("sigma.q")+
+  ggtitle("sigma.q.a.yellow.d.green.l.red")+
   theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "sigma_prior_check.png"))
 
 ```
 The lake random effect may be more affected by the prior dist
 
 ```{r}
+# much wider prior (sigma~exp(0.25))
 fit_prior_check<-stan(file=here("candidate_models","prior_check_all_int.stan"),
                  data=data.list,
-                 #init=hier.inits,
+                 #init=init.phi,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
@@ -604,11 +710,30 @@ sigma.q.l.post.pc<-post.prior.check$sigma_q_l
 
 ggplot()+
   geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+  geom_density(aes(x=sigma.q.a.post.pc), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post.pc), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post.pc), fill="lightpink", alpha=0.5)+
   ggtitle("sigma.q")+
   theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "check_sigma_wider_prior.png"))
+
+# much narrower prior (sigma~exp(10))
+fit_prior_check<-stan(file=here("candidate_models","prior_check_all_int.stan"),
+                 data=data.list,
+                 #init=init.phi,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+
+post.prior.check<-extract(fit_prior_check)
+
+sigma.q.a.post.pc<-post.prior.check$sigma_q_a
+sigma.q.d.post.pc<-post.prior.check$sigma_q_d
+sigma.q.l.post.pc<-post.prior.check$sigma_q_l
+
 
 ggplot()+
   geom_density(aes(x=sigma.q.priors), fill="gray")+
@@ -617,144 +742,15 @@ ggplot()+
   geom_density(aes(x=sigma.q.l.post.pc), fill="lightpink", alpha=0.5)+
   ggtitle("sigma.q")+
   theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "check_sigma_narrow_prior.png"))
 
 
 ```
+sigma values are somewhat sensitive to prior specifications, but especially the lake effect
 
-Very little difference apparent
-
-Let's drop observations from the three lakes with only 1 recap
 
 ```{r}
-`%!in%`<-Negate(`%in%`)
-
-data.drop<-data.indexed%>%
-  filter(lakeID%!in%c("HT","LT","WB"))
-# now only 132 observations
-
-fish_pe_recap_drop<-filter(fish_pe_recap, lakeID%!in%c("HT","LT","WB"))
-
-lakeID_drop<-data.frame(lakeID=fish_pe_recap_drop$lakeID,
-                   L=seq(1:10),
-                   sumCtMt=fish_pe_recap_drop$sumCtMt,
-                   sumRt=fish_pe_recap_drop$sumRt,
-                   surfaceArea=fish_pe_recap_drop$surfaceArea)
-
-anglerID_drop<-data.frame(caughtBy=unique(data.drop$caughtBy),
-                     A=seq(1:16))
-
-dateID_drop<-data.frame(date=unique(data.drop$date),
-                   D=seq(1:30))
-
-data.indexed.drop<-data.drop%>%
-  left_join(dateID_drop, by="date")%>%
-  left_join(anglerID_drop, by="caughtBy")%>%
-  left_join(lakeID_drop, by="lakeID")%>%
-  mutate(log_effort=log(effort))
-
-
-
-data.list.drop<-list(N=nrow(data.indexed.drop),
-                A=max(data.indexed.drop$A),
-                D=max(data.indexed.drop$D),
-                L=max(data.indexed.drop$L),
-                AA=data.indexed.drop$A,
-                DD=data.indexed.drop$D,
-                LL=data.indexed.drop$L,
-                lmbCatch=data.indexed.drop$lmbCatch,
-                log_effort=data.indexed.drop$log_effort,
-                sumCtMt=lakeID_drop$sumCtMt,
-                sumRt=lakeID_drop$sumRt,
-                surfaceArea=lakeID_drop$surfaceArea
-                )
-fit_drop<-stan(file=here("candidate_models","noncentered.hierarchical.LINEARIZED.stan"),
-                 data=data.list.drop,
-                 #init=hier.inits,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-
-
-```
-
-do checks and look at posteriors
-
-```{r}
-post.drop<-extract(fit_drop)
-ppc_dens_overlay(data.list.drop$lmbCatch, post.drop$posterior_pred_check[c(1:100),])
-
-```
-```{r}
-popDensity.post.drop<-post.drop$popDensity
-beta.post.drop<-post.drop$beta
-phi.post.drop<-post.drop$phi
-sigma.q.a.post.drop<-post.drop$sigma_q_a
-sigma.q.d.post.drop<-post.drop$sigma_q_d
-sigma.q.l.post.drop<-post.drop$sigma_q_l
-
-popDensity.post.drop.df<-as.data.frame(popDensity.post.drop)
-names(popDensity.post.drop.df)<-paste0("lake_", seq(1:10))
-
-popDensity.plot<-popDensity.post.drop.df%>%
-  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
-
-ggplot()+
-  #geom_density(popDensity.prior, fill="gray")+
-  geom_density(aes(x=popDensity.prior), fill="gray")+
-  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
-  xlim(0,100)+
-  theme_bw()
-
-```
-
-```{r}
-ggplot()+
-  geom_density(aes(x=beta.prior), fill="gray")+
-  geom_density(aes(x=beta.post.drop), fill="lightblue")+
-  ggtitle("beta")+
-  theme_bw()
-  
-```
-
-```{r}
-ggplot()+
-  geom_density(aes(x=phi.prior), fill="gray")+
-  geom_density(aes(x=phi.post.drop), fill="lightblue")+
-  ggtitle("phi")+
-  theme_bw()
-
-```
-
-```{r}
-ggplot()+
-  geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post.drop), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post.drop), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post.drop), fill="lightpink", alpha=0.5)+
-  ggtitle("sigma.q")+
-  theme_bw()
-
-```
-
-With the better PEs (and less data) the results are qualitatively similar, but parameters are much closer to their priors. 
-
-Check a cleaned up version of the all-intercepts model that drops the unnecessary log_mu_q_a,d,l
-
-ok that didn't work. I made a forum post to get some thoughts on what's happening there
-
-```{r}
-fit_selected<-stan(file=here("candidate_models","selected_model_all_int.stan"),
-                 data=data.list,
-                 #init=hier.inits,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
+fit_selected<-fit_all_int
 
 log_lik_selected<-extract_log_lik(fit_selected, merge_chains=FALSE)
 r_eff_selected<-relative_eff(exp(log_lik_selected))
@@ -770,13 +766,9 @@ print(loo_all_int)
 ```
 
 ```{r}
-summary(fit_all_int, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l"))
+mod.summary<-summary(fit_all_int, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l",
+                                         "log_q_mu", "popDensity"))
+
+mod.summary.comb<-as.data.frame(mod.summary$summary)
+write.csv(mod.summary.comb, here("output_selected_model","tables","fit_all_int_param_summary.csv"))
 ```
-
-
-
-```{r}
-summary(fit_selected, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l"))
-
-```
-
