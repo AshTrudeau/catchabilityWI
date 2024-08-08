@@ -147,16 +147,32 @@ model {
 
 generated quantities{
   
-  vector[N] log_lik;
-  array[N] real posterior_pred_check;
+  //vector[N] log_lik;
+  //array[N] real posterior_pred_check;
+  real prediction_b0;
+  real sigma;
+  
+  array[A] int predict_angler_catch;
+  vector[5] real log_q_a_quantiles;
+  
 
-  for(n in 1:N){
-    posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
+  // for(n in 1:N){
+  //   posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
+  // }
+  // 
+  // for(i in 1:N){
+  //   log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i]|log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]], phi);
+  // }
+  
+  // getting sd of the catch distribution for reference (can compare it to the random intercept sds?)
+  prediction_b0 = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l, phi);
+  
+  sigma = sqrt(prediction_b0 + (prediction_b0^2/phi));
+  
+  for(i in 1:A){
+  predict_angler_catch[i] = neg_binomial_2_log_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
   }
   
-  for(i in 1:N){
-    log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i]|log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]], phi);
-  }
   
 
 }
