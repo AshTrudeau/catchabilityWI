@@ -201,6 +201,8 @@ data.indexed<-data.join%>%
   mutate(log_effort=log(effort))%>%
   rename("lmbCatch"=nCaught)
 
+z_scores <- c(1.645, 0.674, 0, -0.674, -1.645)
+
 data.list<-list(N=nrow(data.indexed),
                 A=max(data.indexed$A),
                 D=max(data.indexed$D),
@@ -213,8 +215,9 @@ data.list<-list(N=nrow(data.indexed),
                 sumCtMt=lakeID$sumCtMt,
                 sumRt=lakeID$sumRt,
                 surfaceArea=lakeID$surfaceArea,
-                z_scores = c(1.645, 0.674, 0, -0.674, -1.645),
-                popDensity_pred=seq(0, 100, by=10)
+                z_scores = z_scores,
+                z_scores_long= rep(z_scores, each=11),
+                log_popDensity_pred=log(seq(1, 101, by=10))
                 )
 
 
@@ -241,6 +244,7 @@ fit_gen<-stan(file=here("candidate_models","selected_model_all_int.stan"),
                  iter=3000,
                  cores=4,
                  refresh=0)
+saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
 
@@ -257,6 +261,19 @@ phi<-post$phi
 sigma_q_a<-post$sigma_q_a
 sigma_q_d<-post$sigma_q_d
 sigma_q_l<-post$sigma_q_l
+
+sigma_e<-post$log_resid_sd
+sigma_fixed<-post$sigma_fixed
+sigma_total<-post$sigma_total
+
+sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
+                           sd=sigma_total)
+
+sigma.fixed.df<-data.frame(param=c(rep("sigma_fixed", length(sigma_fixed))),
+                           sd=sigma_fixed)
+
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
+                           sd=sigma_e)
 
 sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
                              rep("sigma_q_d", length(sigma_q_d)),
@@ -312,43 +329,64 @@ futurama<-pal_futurama("planetexpress")(12)
 simpsons<-pal_simpsons("springfield")(12)
 
 ```
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e)),
+                                   sd=sigma_e))
 
 
 ```{r}
 
 beta.df<-data.frame(param=rep("beta"), estimate=beta)
 
-sigma.nb.plot<-ggplot(sigma.nb.df)+
-  geom_density(aes(x=value, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma))+
-  xlim(0,3)+
-  xlab(expression(sigma))+
-  ylab(expression(paste("p(", sigma, "|catch)")))+
+
+sigma.total.plot<-ggplot(sigma.total.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma["total"]))+
+  xlim(0,7)+
+  xlab(expression(sigma[epsilon]))+
+  ylab(expression(paste("p(", sigma["total"], "|catch)")))+
   theme_bw()
-sigma.nb.plot
+sigma.total.plot
+
+
+sigma.e.plot<-ggplot(sigma.error.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
+  xlim(0,7)+
+  xlab(expression(sigma[epsilon]))+
+  ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
+  theme_bw()
+sigma.e.plot
+
+sigma.fixed.plot<-ggplot(sigma.fixed.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[beta]))+
+  xlim(0,7)+
+  xlab(expression(sigma[beta]))+
+  ylab(expression(paste("p(", sigma[beta], "|catch)")))+
+  theme_bw()
 
 beta.plot<-ggplot(beta.df)+
   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
-  xlim(0,3)+
+  xlim(0,7)+
   xlab(expression(beta))+
   ylab(expression(paste("p(", beta, "|catch)")))+
   theme_bw()
 beta.plot
 
-sigma.plot<-ggplot(sigma.df)+
+sigma.random.plot<-ggplot(sigma.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
   scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
-  xlim(0,3)+
-  ylab(expression(paste("p(", sigma["int"], "|catch)")))+
-  xlab(expression(sigma["int"]))+
+  xlim(0,7)+
+  ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
+  xlab(expression(sigma["a,d,l"]))+
   theme_bw()
-sigma.plot
+sigma.random.plot
 
-plot_grid(sigma.nb.plot, sigma.plot, beta.plot, ncol=1, align="v")
-ggsave(here("output_selected_model","figures","beta.sigma.posterior.png"), height=6, width=6)
+plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
+ggsave(here("output_selected_model","figures","beta.sigma.posterior.png"), height=8, width=6)
 ```
-Be sure to note that beta is the coefficient for SCALED population density, which makes its scale it more comparable to the sigma values. 
+So comparing the sd of each of the random effects to the unexplained sd, wow. Important to note that this is on the log scale
 
 ```{r}
 angler_long_plot<-angler_long%>%
@@ -443,7 +481,7 @@ ggsave(here::here("output_selected_model","figures","angler.mean.pred.catch.png"
 That's not very useful for readers; instead do quantiles
 
 ```{r}
-quant.catch.df<-as.data.frame(post_gen$predict_quantile_catch)
+quant.catch.df<-as.data.frame(post_gen$predict_quantile_angler_catch)
 
 names(quant.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
 
@@ -471,3 +509,5 @@ ggsave(here("output_selected_model","figures", "percentile.catch.violin.png"), h
 ```
 
 Finally for these quantiles of anglers across a range of population densities
+
+Showing here: there is a lot of unexplained variation, yes. The mean effect of angler skill and daily conditions, however, is still in the range that's noticeable

@@ -22,7 +22,9 @@ data {
   int<lower=1> L; 
   
   vector[5] z_scores;
-  vector[11] popDensity_pred;
+  vector[55] z_scores_long;
+  vector[11] log_popDensity_pred;
+
 
   
   // all observations of catch (response)
@@ -152,27 +154,65 @@ generated quantities{
   
   //vector[N] log_lik;
   //array[N] real posterior_pred_check;
+  // model expectation for converting phi of catch NB distribution to sigma
   real prediction_b0;
-  real sigma;
+  real log_resid_sd;
   
+  // for sd of fixed effects only
+  vector[N] predict_fixed;
+  real sigma_fixed;
+  real sigma_total;
+  
+  real r2_marginal;
+  real r2_conditional;
+  
+  real ICC_a;
+  real ICC_d;
+  real ICC_l;
+  
+  // for mean catch predictions of observed anglers
   array[A] int predict_angler_catch;
-  array[5] real quantile_angler;
+  
+  // for mean catch predictions of angler quantiles
+  vector[5] quantile_angler;
   array[5] int predict_quantile_catch;
   
+  // for mean catch predictions of angler quantiles across population densities
+  vector[55] quantile_angler_rep;
+  vector[11] log_popDensity_pred_sc;
+  vector[55] log_popDensity_sc_rep;
+  array[55] int predict_quantile_angler_catch_popDens;
+  
+  // for mean catch predictions of date quantiles
+  
+  vector[5] quantile_date;
+  array[5] int predict_quantile_date_catch;
+  
+  // and for mean catch predictions of date quantiles across population densities
+  vector[55] quantile_date_rep;
+  array[55] int predict_quantile_date_catch_popDens;
 
 
-  // for(n in 1:N){
-  //   posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
-  // }
-  // 
-  // for(i in 1:N){
-  //   log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i]|log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]], phi);
-  // }
+ 
   
-  // getting sd of the catch distribution for reference (can compare it to the random intercept sds?)
-  prediction_b0 = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l, phi);
+  // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
+  prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
   
-  sigma = sqrt(prediction_b0 + (prediction_b0^2/phi));
+  log_resid_sd = sqrt(trigamma(((1/prediction_b0)+(1/phi))^-1));
+  
+  for(i in 1:N){
+  predict_fixed[i] = log_effort[i] + log_q_mu + log_popDensity_sc[LL[i]] * beta;
+  }
+  
+  sigma_fixed = sd(predict_fixed);
+  sigma_total=sigma_fixed+sigma_q_a+sigma_q_d+sigma_q_l+log_resid_sd;
+  
+  r2_marginal = sigma_fixed/sigma_total;
+  r2_conditional = (sigma_fixed+sigma_q_a+sigma_q_d+sigma_q_l)/sigma_total;
+  
+  ICC_a = sigma_q_a/sigma_total;
+  ICC_d = sigma_q_d/sigma_total;
+  ICC_l = sigma_q_l/sigma_total;
   
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
@@ -183,15 +223,56 @@ generated quantities{
   quantile_angler[i] = z_scores[i]*sigma_q_a + log_mu_q_a;
   }
   
-  // predict their mean catch
+  for(i in 1:55){
+    quantile_angler_rep[i] = z_scores_long[i]*sigma_q_a + log_mu_q_a;
+  }
+  
+  // predict their mean catch of quantiles
   
   for(i in 1:5){
     predict_quantile_catch[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
   }
   
+  // predict mean catch of quantiles across population densities
   
+  // first I need to scale the prediction pop densities
+  
+  for(i in 1:11){
+    log_popDensity_pred_sc[i] = (log_popDensity_pred[i]-mean(log_popDensity))/sd(log_popDensity);
+  }
+  // then repeat it to make it length 55
+  
+  log_popDensity_sc_rep = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,append_row(log_popDensity_pred_sc, log_popDensity_pred_sc))));
+
+  for(i in 1:55){
+    predict_quantile_angler_catch_popDens[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + quantile_angler_rep[i] + log_mu_q_d + log_mu_q_l + log_popDensity_sc_rep[i],phi);
+  }  
+  
+  // now catch predictions across daily condition quantiles
+    for(i in 1:5){
+  quantile_date[i] = z_scores[i]*sigma_q_d + log_mu_q_d;
+  }
+  
+  for(i in 1:55){
+    quantile_date_rep[i] = z_scores_long[i]*sigma_q_d + log_mu_q_d;
+  }
 
   
+    for(i in 1:55){
+    predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_angler_rep[i] + log_mu_q_l + log_popDensity_sc_rep[i],phi);
+  }  
+
+  
+  
+  // posterior predictive checks, removed after completion to reduce run time
+  // for(n in 1:N){
+  //   posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
+  // }
+  // 
+  // for(i in 1:N){
+  //   log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i]|log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]], phi);
+  // }
+
 
 }
 
