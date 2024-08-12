@@ -217,8 +217,10 @@ data.list<-list(N=nrow(data.indexed),
                 surfaceArea=lakeID$surfaceArea,
                 z_scores = z_scores,
                 z_scores_long= rep(z_scores, each=21),
-                z_scores_best_worst_angler = rep(c(z_scores[1], z_scores[1], z_scores[5], z_scores[5]), 21),
-                z_scores_best_worst_date = rep(c(z_scores[1], z_scores[5], z_scores[1], z_scores[5]), 21),
+                z_scores_best_worst_angler = rep(c(z_scores[1], z_scores[1], z_scores[5], z_scores[5]), each=21),
+                z_scores_best_worst_date = rep(c(z_scores[1], z_scores[5], z_scores[1], z_scores[5]), each=21),
+                z_scores_medium_angler = rep(c(z_scores[2], z_scores[2], z_scores[4], z_scores[4]), each=21),
+                z_scores_medium_date = rep(c(z_scores[2], z_scores[4], z_scores[2], z_scores[4]), each=21),
                 log_popDensity_pred=log(seq(1, 201, by=10))
                 )
 
@@ -289,9 +291,9 @@ post<-extract(fit_gen)
 
 beta<-post$beta
 phi<-post$phi
-sigma_q_a<-post$sigma_q_a
-sigma_q_d<-post$sigma_q_d
-sigma_q_l<-post$sigma_q_l
+sigma_q_a<-(post$sigma_q_a)
+sigma_q_d<-(post$sigma_q_d)
+sigma_q_l<-(post$sigma_q_l)
 
 sigma_e<-post$log_resid_sd
 sigma_fixed<-post$sigma_fixed
@@ -425,9 +427,46 @@ sigma.random.plot<-ggplot(sigma.df)+
         axis.title.x=element_text(size=16))
 sigma.random.plot
 
-plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
+plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
+#plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
 ggsave(here("output_selected_model","figures","beta.sigma.posterior.png"), height=8, width=6)
 ```
+ICC
+```{r}
+icc.df<-data.frame(group=c(rep("Angler effect", 8000), rep("Date effect", 8000), rep("Lake effect", 8000)),
+                     ICC=c(post_gen$ICC_a, post_gen$ICC_d, post_gen$ICC_l))
+
+ggplot(icc.df)+
+  geom_density(aes(x=ICC, fill=group), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="")+
+  ylab(expression(paste("p(", ICC["a,d,l"], "|catch)")))+
+  xlab("Intraclass Correlation Coefficient")+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_selected_model","figures","ICC_density.png"), height=4, width=6)
+
+
+```
+```{r}
+r2.df<-data.frame(type=c(rep("marginal", 8000), rep("conditional", 8000)),
+                  r2=c(post_gen$r2_marginal, post_gen$r2_conditional))
+
+ggplot(r2.df)+
+  geom_density(aes(x=r2, fill=type), alpha=0.7)+
+  scale_fill_manual(values=simpsons[c(1,2)], name="")+
+  ylab(expression(paste("p(", R^2, "|catch)")))+
+  xlab(expression(R^2))+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_selected_model","figures","R2_density.png"), height=4, width=6)
+
+```
+
+
 So comparing the sd of each of the random effects to the unexplained sd, wow. Important to note that this is on the log scale
 
 ```{r}
@@ -577,7 +616,7 @@ ggplot(catch.angler.df)+
   geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
   scale_color_manual(values=gradient.a)+
   guides(color=guide_legend(title=expression(paste("Angler skill\neffect percentile"))))+
-  xlab("Population density")+
+  xlab("Population density (1/ha)")+
   ylab("Predicted mean catch")+
   theme_bw()+
     theme(axis.title.y=element_text(size=16),
@@ -641,7 +680,7 @@ ggplot(catch.date.df)+
   geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
   scale_color_manual(values=gradient.a)+
   guides(color=guide_legend(title=expression(paste("Daily conditions\neffect percentile"))))+
-  xlab("Population density")+
+  xlab("Population density (1/ha)")+
   ylab("Predicted mean catch")+
   theme_bw()+
     theme(axis.title.y=element_text(size=16),
@@ -657,10 +696,78 @@ As we'd expect from the sigma_d distribution, it's very similar
 
 Effects together? highest percentiles and lowest percentiles
 
+
+
+
 ```{r}
+quantiles<-c("95%", "5%")
+
+
+best.worst.df<-data.frame(pred.catch=colMeans(post_gen$predict_best_worst),
+                          pop.density=rep(seq(1, 201, by=10), 4),
+                          quant.angler=factor(rep(quantiles, each=42), levels=c("5%","95%")),
+                          quant.date=factor(rep(quantiles, each=21), levels=c("5%","95%")))%>%
+  mutate(group=ifelse(quant.angler=="95%" & quant.date=="95%", "High skill,\ngood conditions",
+                      ifelse(quant.angler=="95%" & quant.date=="5%", "High skill,\npoor conditions",
+                             ifelse(quant.angler=="5%" & quant.date=="95%", "Low skill,\ngood conditions",
+                                    ifelse(quant.angler=="5%" & quant.date=="5%", "Low skill,\npoor conditions", "error")))),
+         facet=ifelse(quant.angler=="95%", "High skill (95th percentile)", "Low skill (5th percentile)"),
+         legend=ifelse(quant.date=="95%", "Good (95th percentile)", "Poor (5th percentile)"))
+
+ggplot(best.worst.df)+
+  geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  scale_color_manual(values=c("red","blue"))+
+  xlim(0,150)+
+  facet_grid(.~facet)+
+  guides(color=guide_legend(title="Daily conditions"))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16),
+        strip.text.x=element_text(size=11),
+        legend.text=element_text(size=11),
+        legend.title=element_text(size=12))
+ggsave(here("output_selected_model","figures","best.worst.comparison.png"), height=4, width=8)
 
 ```
 
+Ah, right, it's a multiplicative effect of angler skill and daily conditions. 
+
+I'd like a version with 75-25 because these extremes are wild. 
+
+```{r}
+quantiles<-c("75%", "25%")
+
+
+medium.df<-data.frame(pred.catch=colMeans(post_gen$predict_medium),
+                          pop.density=rep(seq(1, 201, by=10), 4),
+                          quant.angler=factor(rep(quantiles, each=42), levels=c("25%","75%")),
+                          quant.date=factor(rep(quantiles, each=21), levels=c("25%","75%")))%>%
+  mutate(facet=ifelse(quant.angler=="75%", "Higher skill (75th percentile)", "Lower skill (25th percentile)"),
+         legend=ifelse(quant.date=="75%", "Good (75th percentile)", "Poor (25th percentile)"))
+
+ggplot(medium.df)+
+  geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  scale_color_manual(values=c("red","blue"))+
+  xlim(0,150)+
+  facet_grid(.~facet)+
+  guides(color=guide_legend(title="Daily conditions"))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16),
+        strip.text.x=element_text(size=11),
+        legend.text=element_text(size=11),
+        legend.title=element_text(size=12))
+ggsave(here("output_selected_model","figures","medium.comparison.png"), height=4, width=8)
+
+```
 
 
 do a quick cross-tab

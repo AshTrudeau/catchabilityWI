@@ -37,6 +37,8 @@ data {
   vector[84] z_scores_best_worst_angler;
   vector[84] z_scores_best_worst_date;
   vector[21] log_popDensity_pred;
+  vector[84] z_scores_medium_angler;
+  vector[84] z_scores_medium_date;
 
 
   
@@ -169,10 +171,13 @@ generated quantities{
   //array[N] real posterior_pred_check;
   // model expectation for converting phi of catch NB distribution to sigma
   real prediction_b0;
+  real log_resid_var;
   real log_resid_sd;
   
   // for sd of fixed effects only
   vector[N] predict_fixed;
+  real sigma_2_fixed;
+  real sigma_2_total;
   real sigma_fixed;
   real sigma_total;
   
@@ -209,8 +214,13 @@ generated quantities{
   vector[84] best_worst_angler;
   vector[84] best_worst_date;
   
+  vector[84] medium_angler;
+  vector[84] medium_date;
+  
   vector[84] log_popDensity_sc_best_worst;
   array[84] int predict_best_worst;
+  
+  array[84] int predict_medium;
 
 
  
@@ -218,21 +228,25 @@ generated quantities{
   // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
   prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
   
-  log_resid_sd = sqrt(trigamma(((1/prediction_b0)+(1/phi))^-1));
-  
+  log_resid_var = trigamma(((1/prediction_b0)+(1/phi))^-1);
+
   for(i in 1:N){
   predict_fixed[i] = log_effort[i] + log_q_mu + log_popDensity_sc[LL[i]] * beta;
   }
   
-  sigma_fixed = sd(predict_fixed);
-  sigma_total=sigma_fixed+sigma_q_a+sigma_q_d+sigma_q_l+log_resid_sd;
+  sigma_2_fixed = variance(predict_fixed);
+  sigma_2_total=sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+(sigma_q_l)^2+log_resid_var;
   
-  r2_marginal = sigma_fixed/sigma_total;
-  r2_conditional = (sigma_fixed+sigma_q_a+sigma_q_d+sigma_q_l)/sigma_total;
+  r2_marginal = sigma_2_fixed/sigma_2_total;
+  r2_conditional = (sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+(sigma_q_l)^2)/sigma_2_total;
   
-  ICC_a = sigma_q_a/sigma_total;
-  ICC_d = sigma_q_d/sigma_total;
-  ICC_l = sigma_q_l/sigma_total;
+  ICC_a = (sigma_q_a)^2/sigma_2_total;
+  ICC_d = (sigma_q_d)^2/sigma_2_total;
+  ICC_l = (sigma_q_l)^2/sigma_2_total;
+  
+  sigma_total = sqrt(sigma_2_total);
+  sigma_fixed = sqrt(sigma_2_fixed);
+  log_resid_sd = sqrt(log_resid_var);
   
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
@@ -299,10 +313,23 @@ generated quantities{
   }
 
 
-  log_popDensity_sc_best_worst = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,log_popDensity_pred)));
+  log_popDensity_sc_best_worst = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,log_popDensity_pred_sc)));
 
   for(i in 1:84){
     predict_best_worst[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + best_worst_angler[i] + best_worst_date[i] + log_mu_q_l + beta*log_popDensity_sc_best_worst[i],phi);
+  }
+
+
+  for(i in 1:84){
+    medium_angler[i] = z_scores_medium_angler[i]*sigma_q_a + log_mu_q_a;
+  }
+  
+    for(i in 1:84){
+    medium_date[i] = z_scores_medium_date[i]*sigma_q_d + log_mu_q_d;
+  }
+  
+  for(i in 1:84){
+    predict_medium[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + medium_angler[i] + medium_date[i] + log_mu_q_l + beta*log_popDensity_sc_best_worst[i],phi);
   }
 
 
