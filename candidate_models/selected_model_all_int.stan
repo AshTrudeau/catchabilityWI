@@ -11,6 +11,17 @@
 
 // random effects are unbalanced and not nested
 
+// safe neg_binomial generated from here https://discourse.mc-stan.org/t/numerical-stability-of-gps-with-negative-binomial-likelihood/19343/3
+// (had problems w ith overflow during posterior predictions)
+
+functions{
+   int neg_binomial_2_log_safe_rng(real eta, real phi) {
+    real gamma_rate = gamma_rng(phi, phi / exp(eta));
+    if (gamma_rate > exp(20.7)) gamma_rate = exp(20.7); // i think this is the max value before overflow but haven't double checked
+    return poisson_rng(gamma_rate);
+  }
+}
+
 data {
   // number of observations (205)
   int<lower=1> N;
@@ -22,8 +33,10 @@ data {
   int<lower=1> L; 
   
   vector[5] z_scores;
-  vector[55] z_scores_long;
-  vector[11] log_popDensity_pred;
+  vector[105] z_scores_long;
+  vector[84] z_scores_best_worst_angler;
+  vector[84] z_scores_best_worst_date;
+  vector[21] log_popDensity_pred;
 
 
   
@@ -178,10 +191,10 @@ generated quantities{
   array[5] int predict_quantile_catch;
   
   // for mean catch predictions of angler quantiles across population densities
-  vector[55] quantile_angler_rep;
-  vector[11] log_popDensity_pred_sc;
-  vector[55] log_popDensity_sc_rep;
-  array[55] int predict_quantile_angler_catch_popDens;
+  vector[105] quantile_angler_rep;
+  vector[21] log_popDensity_pred_sc;
+  vector[105] log_popDensity_sc_rep;
+  array[105] int predict_quantile_angler_catch_popDens;
   
   // for mean catch predictions of date quantiles
   
@@ -189,8 +202,15 @@ generated quantities{
   array[5] int predict_quantile_date_catch;
   
   // and for mean catch predictions of date quantiles across population densities
-  vector[55] quantile_date_rep;
-  array[55] int predict_quantile_date_catch_popDens;
+  vector[105] quantile_date_rep;
+  array[105] int predict_quantile_date_catch_popDens;
+  
+  // for best worst angler and date
+  vector[84] best_worst_angler;
+  vector[84] best_worst_date;
+  
+  vector[84] log_popDensity_sc_best_worst;
+  array[84] int predict_best_worst;
 
 
  
@@ -215,7 +235,7 @@ generated quantities{
   ICC_l = sigma_q_l/sigma_total;
   
   for(i in 1:A){
-  predict_angler_catch[i] = neg_binomial_2_log_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+  predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
   }
   
   // this gives log_q_a values for 95, 75, 5, 25, and 5 percentiles
@@ -223,29 +243,29 @@ generated quantities{
   quantile_angler[i] = z_scores[i]*sigma_q_a + log_mu_q_a;
   }
   
-  for(i in 1:55){
+  for(i in 1:105){
     quantile_angler_rep[i] = z_scores_long[i]*sigma_q_a + log_mu_q_a;
   }
   
   // predict their mean catch of quantiles
   
   for(i in 1:5){
-    predict_quantile_catch[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+    predict_quantile_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
   }
   
   // predict mean catch of quantiles across population densities
   
   // first I need to scale the prediction pop densities
   
-  for(i in 1:11){
+  for(i in 1:21){
     log_popDensity_pred_sc[i] = (log_popDensity_pred[i]-mean(log_popDensity))/sd(log_popDensity);
   }
   // then repeat it to make it length 55
   
   log_popDensity_sc_rep = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,append_row(log_popDensity_pred_sc, log_popDensity_pred_sc))));
 
-  for(i in 1:55){
-    predict_quantile_angler_catch_popDens[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + quantile_angler_rep[i] + log_mu_q_d + log_mu_q_l + log_popDensity_sc_rep[i],phi);
+  for(i in 1:105){
+    predict_quantile_angler_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler_rep[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity_sc_rep[i],phi);
   }  
   
   // now catch predictions across daily condition quantiles
@@ -253,20 +273,42 @@ generated quantities{
   quantile_date[i] = z_scores[i]*sigma_q_d + log_mu_q_d;
   }
   
-  for(i in 1:55){
+  for(i in 1:105){
     quantile_date_rep[i] = z_scores_long[i]*sigma_q_d + log_mu_q_d;
   }
 
-  
-    for(i in 1:55){
-    predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_angler_rep[i] + log_mu_q_l + log_popDensity_sc_rep[i],phi);
-  }  
+  for(i in 1:5){
+    predict_quantile_date_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date[i] + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+  }
 
   
+    for(i in 1:105){
+    predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date_rep[i] + log_mu_q_l + beta*log_popDensity_sc_rep[i],phi);
+  }  
+
+  // for fun, the best and worst anglers on the best and worst days
   
+
+
+  for(i in 1:84){
+    best_worst_angler[i] = z_scores_best_worst_angler[i]*sigma_q_a + log_mu_q_a;
+  }
+  
+    for(i in 1:84){
+    best_worst_date[i] = z_scores_best_worst_date[i]*sigma_q_d + log_mu_q_d;
+  }
+
+
+  log_popDensity_sc_best_worst = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,log_popDensity_pred)));
+
+  for(i in 1:84){
+    predict_best_worst[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + best_worst_angler[i] + best_worst_date[i] + log_mu_q_l + beta*log_popDensity_sc_best_worst[i],phi);
+  }
+
+
   // posterior predictive checks, removed after completion to reduce run time
   // for(n in 1:N){
-  //   posterior_pred_check[n]=neg_binomial_2_log_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
+  //   posterior_pred_check[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + log_q_l[LL[n]] + beta * log_popDensity_sc[LL[n]],phi);
   // }
   // 
   // for(i in 1:N){

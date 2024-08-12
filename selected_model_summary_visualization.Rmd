@@ -216,28 +216,59 @@ data.list<-list(N=nrow(data.indexed),
                 sumRt=lakeID$sumRt,
                 surfaceArea=lakeID$surfaceArea,
                 z_scores = z_scores,
-                z_scores_long= rep(z_scores, each=11),
-                log_popDensity_pred=log(seq(1, 101, by=10))
+                z_scores_long= rep(z_scores, each=21),
+                z_scores_best_worst_angler = rep(c(z_scores[1], z_scores[1], z_scores[5], z_scores[5]), 21),
+                z_scores_best_worst_date = rep(c(z_scores[1], z_scores[5], z_scores[1], z_scores[5]), 21),
+                log_popDensity_pred=log(seq(1, 201, by=10))
                 )
 
 
 ```
 
+
 ```{r}
-fit<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
+#fit<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
 ```
 
 ```{r}
-init.phi<-function(){
-  # narrower distribution for initial phi value (high values were breaking model fits in some chains)
-  phi=rgamma(1,3)
-  init<-list(phi=phi)
-  return(init)
-}
+set.seed(26)
+
+# phi was the main problem
+
+ inits<-function(){
+   # narrower distribution for initial phi value (high values were breaking model fits in some chains)
+   phi=rgamma(1,3)
+   # beta=rlnorm(1,-1,1)
+   # popDensity = rlnorm(1,0,2)
+   # log_mu_q_a~rnorm(1,0,1)
+   # log_mu_q_d~rnorm(1,0,1)
+   # log_mu_q_l~rnorm(1,0,1)
+   # q_a_raw~rnorm(1,0,1)
+   # q_d_raw~rnorm(1,0,1)
+   # q_l_raw~rnorm(1,0,1)
+   # sigma_q_a~rexp(1,1)
+   # sigma_q_d~rexp(1,1)
+   # sigma_q_l~rexp(1,1)
+ 
+   init<-list(phi=phi
+              # beta=beta,
+              # popDensity=popDensity,
+              # # log_mu_q_a=log_mu_q_a,
+              # # log_mu_q_d=log_mu_q_d,
+              # # log_mu_q_l=log_mu_q_l,
+              # q_a_raw=q_a_raw,
+              # q_d_raw=q_d_raw,
+              # q_l_raw=q_l_raw,
+              # sigma_q_a=sigma_q_a,
+              # sigma_q_d=sigma_q_d,
+              # sigma_q_l=sigma_q_l
+              )
+   return(init)
+ }
 
 fit_gen<-stan(file=here("candidate_models","selected_model_all_int.stan"),
                  data=data.list,
-                 init=init.phi,
+                 #init=inits,
                  control=list(stepsize=0.1, max_treedepth=15),
                  chains=4,
                  warmup=1000,
@@ -340,12 +371,14 @@ beta.df<-data.frame(param=rep("beta"), estimate=beta)
 
 sigma.total.plot<-ggplot(sigma.total.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma["total"]))+
+  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
   xlim(0,7)+
-  xlab(expression(sigma[epsilon]))+
+  xlab(expression(sigma["total"]))+
   ylab(expression(paste("p(", sigma["total"], "|catch)")))+
-  theme_bw()
-sigma.total.plot
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
 
 
 sigma.e.plot<-ggplot(sigma.error.df)+
@@ -354,33 +387,42 @@ sigma.e.plot<-ggplot(sigma.error.df)+
   xlim(0,7)+
   xlab(expression(sigma[epsilon]))+
   ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
-  theme_bw()
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
 sigma.e.plot
 
 sigma.fixed.plot<-ggplot(sigma.fixed.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[beta]))+
+  scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
   xlim(0,7)+
   xlab(expression(sigma[beta]))+
   ylab(expression(paste("p(", sigma[beta], "|catch)")))+
-  theme_bw()
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
 
-beta.plot<-ggplot(beta.df)+
-  geom_density(aes(x=estimate, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
-  xlim(0,7)+
-  xlab(expression(beta))+
-  ylab(expression(paste("p(", beta, "|catch)")))+
-  theme_bw()
-beta.plot
+# beta.plot<-ggplot(beta.df)+
+#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
+#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
+#   xlim(0,7)+
+#   xlab(expression(beta))+
+#   ylab(expression(paste("p(", beta, "|catch)")))+
+#   theme_bw()
+# beta.plot
 
 sigma.random.plot<-ggplot(sigma.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
   scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
   xlim(0,7)+
   ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
-  xlab(expression(sigma["a,d,l"]))+
-  theme_bw()
+  xlab(expression(sigma))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=16))
 sigma.random.plot
 
 plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
@@ -481,7 +523,7 @@ ggsave(here::here("output_selected_model","figures","angler.mean.pred.catch.png"
 That's not very useful for readers; instead do quantiles
 
 ```{r}
-quant.catch.df<-as.data.frame(post_gen$predict_quantile_angler_catch)
+quant.catch.df<-as.data.frame(post_gen$predict_quantile_catch)
 
 names(quant.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
 
@@ -498,16 +540,172 @@ quant.catch.sum<-quant.catch.long%>%
             lower=mean-1.96*sd)
 
 ggplot(quant.catch.long)+
-  geom_violin(aes(x=`Angler skill`, y=`Mean catch`), fill=futurama[7], adjust=2)+
+  geom_violin(aes(x=`Angler skill`, y=`Mean catch`), fill=futurama[1], adjust=2)+
   geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=mean), size=3)+
   geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=median), size=3, color="gray")+
   coord_flip()+
-  xlab("Angler catch power percentile")+
+  xlab(expression(paste("Angler catch power percentile (ln ", "q"["a"], ")")))+
   ylab("Predicted mean catch")+
-  theme_bw()
+  theme_bw()+
+  theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
 ggsave(here("output_selected_model","figures", "percentile.catch.violin.png"), height=4, width=6)
 ```
 
 Finally for these quantiles of anglers across a range of population densities
 
 Showing here: there is a lot of unexplained variation, yes. The mean effect of angler skill and daily conditions, however, is still in the range that's noticeable
+
+55 rows of predictions
+```{r}
+popDensity<-rep(seq(1,201, by=10), 5)
+percentile<-rep(c("95%","75%","50%","25%","5%"), each=21)
+
+
+angler.pred.pop<-post_gen$predict_quantile_angler_catch_popDens
+
+catch.angler.df<-data.frame(popDensity=popDensity,
+                            percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
+                            meanCatch=colMeans(angler.pred.pop))
+
+gradient.a<-c("#ffdce2","#ffced1","#ffafa6","#ff8d6b","#FF6F00FF")
+
+ggplot(catch.angler.df)+
+  geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
+  scale_color_manual(values=gradient.a)+
+  guides(color=guide_legend(title=expression(paste("Angler skill\neffect percentile"))))+
+  xlab("Population density")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_selected_model","figures","angler.effect.popDensity.png"), height=4, width=6)
+```
+Next daily conditions
+
+```{r}
+quant.date.catch.df<-as.data.frame(post_gen$predict_quantile_date_catch)
+
+names(quant.date.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
+
+quant.date.catch.long<-quant.date.catch.df%>%
+  pivot_longer(cols=everything(), names_to="Day effect", values_to="Mean catch")%>%
+  mutate(`Day effect`=factor(`Day effect`, levels=c("5th", "25th", "50th", "75th", "95th")))
+
+quant.date.catch.sum<-quant.date.catch.long%>%
+  group_by(`Day effect`)%>%
+  summarize(mean=mean(`Mean catch`),
+            median=median(`Mean catch`),
+            sd=sd(`Mean catch`),
+            upper=mean+1.96*sd,
+            lower=mean-1.96*sd)
+
+ggplot(quant.date.catch.long)+
+  geom_violin(aes(x=`Day effect`, y=`Mean catch`), fill="#8A4198FF", adjust=2)+
+  geom_point(data=quant.date.catch.sum, aes(x=`Day effect`, y=mean), size=3)+
+  geom_point(data=quant.date.catch.sum, aes(x=`Day effect`, y=median), size=3, color="gray")+
+  coord_flip()+
+  xlab(expression(paste("Day effect percentile (ln ", "q"["d"], ")")))+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+  theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_selected_model","figures", "percentile.day.catch.violin.png"), height=4, width=6)
+
+```
+
+
+```{r}
+popDensity<-rep(seq(1,201, by=10), 5)
+percentile<-rep(c("95%","75%","50%","25%","5%"), each=21)
+
+
+date.pred.pop<-post_gen$predict_quantile_date_catch_popDens
+
+catch.date.df<-data.frame(popDensity=popDensity,
+                            percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
+                            meanCatch=colMeans(date.pred.pop))
+
+gradient.a<-c("#efd2dd","#d9a6c3","#bf7caf","#9e55a0","#8A4198FF")
+
+ggplot(catch.date.df)+
+  geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
+  scale_color_manual(values=gradient.a)+
+  guides(color=guide_legend(title=expression(paste("Daily conditions\neffect percentile"))))+
+  xlab("Population density")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_selected_model","figures","date.effect.popDensity.png"), height=4, width=6)
+
+
+```
+As we'd expect from the sigma_d distribution, it's very similar
+
+Effects together? highest percentiles and lowest percentiles
+
+```{r}
+
+```
+
+
+
+do a quick cross-tab
+
+```{r}
+all_anglers<-data.indexed$caughtBy
+all_dates<-data.indexed$date
+all_lakes<-data.indexed$lakeID
+
+crosstab.df<-data.frame(anglers=all_anglers,
+                        dates=all_dates,
+                        lakes=all_lakes)
+
+crosstab.df.dist<-distinct(crosstab.df)
+
+angler.tab<-crosstab.df.dist%>%
+  mutate(years=year(ymd(dates)))%>%
+  group_by(anglers)%>%
+  summarize(nyears=length(unique(years)))
+angler.tab
+
+lake.tab<-crosstab.df.dist%>%
+  mutate(year=year(ymd(dates)))%>%
+  group_by(lakes)%>%
+  summarize(nyear=length(unique(year)))
+
+lake.tab
+
+
+lake.anglers<-crosstab.df.dist%>%
+  group_by(lakes)%>%
+  summarize(nanglers=length(unique(anglers)))
+
+lake.anglers
+
+lake.dates<-crosstab.df.dist%>%
+  group_by(lakes)%>%
+  summarize(ndates=length(unique(dates)))%>%
+  ungroup()%>%
+  left_join(lake.anglers, by="lakes")
+
+lake.dates
+
+crosstab.df.dist%>%
+  group_by(lakes, anglers)%>%
+  summarize(ndates=length(unique(dates)))
+```
+
