@@ -20,3 +20,5 @@ anglerInfo.xlsx
 MFEdb/
 output_selected_model/posterior_predictive_checks/
 output_selected_model/prior_checks/
+output_angler_date_model/
+old_folder_cleanup/
