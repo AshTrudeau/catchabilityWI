@@ -1,0 +1,559 @@
+---
+title: "prior checks"
+output: html_document
+date: "2024-08-13"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot)
+```
+
+Read in selected model fit, do some visualization on parameter estimates. Then revise model script (generated quantities block) to generate catch predictions for angler skill quantiles at mean popDensity and mean log_q_l, d. Finally, generate catch predictions across popDensities and dates
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+# raw catch data
+wd<-getwd()
+db.dir<-paste0(wd, "/MFEdb/")
+db<-"MFEdb_20220405.db"
+
+dbTableList(db.dir, db)
+
+lakes<-dbTable("lakes", fpath=db.dir, dbname=db)
+#crew<-dbTable("crew", fpath=db.dir, dbname=db)%>%
+#  filter(year%in%c("2018","2019"))
+#write.csv(crew, "crew.csv")
+
+# lake data
+
+lakes.key<-lakes%>%
+  dplyr::select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
+# Found lake missing surface area--135.97 ha
+lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
+
+
+projects<-dbTable("projects", fpath=db.dir, dbname=db)
+
+fishSamples<-dbTable("fish_samples", fpath=db.dir, dbname=db)%>%
+  filter(projectID%in%c("37") & gear=="AN")%>%
+    mutate(nAnglers=as.numeric(nAnglers),
+    effort=effort/nAnglers)
+
+
+fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
+  filter(sampleID%in%fishSamples$sampleID)%>%
+  filter(str_length(caughtBy)<4)%>%
+  mutate(caughtBy=str_trim(caughtBy))%>%
+  filter(otu=="largemouth_bass")%>%
+  dplyr::select(projectID:caughtBy, comments)%>%
+  # join fishing effort
+  left_join(fishSamples[,c("lakeID","sampleID","dayOfYear","dateSample","dateTimeSample","crew","effort","effortUnits","nAnglers")], by="sampleID")
+
+# catch rates for each angler trip, correcting for some ambiguous initials first
+
+ALK.lake.date<-c("LV_20190608",
+                 "SM_20190615",
+                 "WN_20190617",
+                 "BY_20190622")
+
+AMK.lake.date<-c("DS_20190613",
+                 "BOT_20190615",
+                 "SM_20190621",
+                 "BOT_20190624",
+                 "NH_20190713")
+
+long.crew<-fishSamples%>%
+    mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))%>%
+  mutate(crewFix.ALK=ifelse(lakeID_date%in%ALK.lake.date & grepl("AK", crew), 1, 0),
+         crewFix.AMK=ifelse(lakeID_date%in%AMK.lake.date & grepl("AK", crew), 1, 0))%>%
+  mutate(crew=ifelse(crewFix.ALK==1, str_replace(crew, "AK", "ALK"), crew),
+         crew=ifelse(crewFix.AMK==1, str_replace(crew, "AK", "AMK"), crew))%>%
+  group_by(sampleID)%>%
+  summarize(crew=unique(crew),
+            effort=unique(effort))%>%
+  # split crew into columns and then pivot longer
+  separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
+  pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)%>%
+  mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))%>%
+  mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))
+
+ 
+ all.data<-fishInfo%>%
+  mutate(year=year(dateSample))%>%
+  left_join(lakes.key, by="lakeID")
+  
+
+  
+# now get catch rates from angling data and left join to long.crew. empty values can then be replaced with 0
+
+cpue<-all.data%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(nCaught=n())
+
+
+
+full.data<-long.crew%>%
+  left_join(cpue, by=c("sampleID", "caughtBy"))%>%
+  mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))
+
+
+```
+
+
+code for processing mark recap data
+
+```{r}
+fish_samples<-dbTable("fish_samples", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(useSampleMarkRecap=="yes")
+
+# ok, we want to do projects 37 and 38 separately. 37 used AF (anal fin) tags, 38 used PIT tags
+fish_info<-dbTable("fish_info", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(sampleID%in%fish_samples$sampleID)%>%
+  filter(otu=="largemouth_bass")
+
+fish_data<-inner_join(fish_samples, fish_info, by="sampleID")%>%
+  mutate(lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         clipRecapture=as.numeric(clipRecapture),
+         clipRecapture=ifelse(is.na(clipRecapture),0,clipRecapture),
+         tagged=ifelse(clipApply=="AF", 1, 0))
+
+samples<-unique(fish_data$sampleID)
+
+lakes<-dbTable("lakes", fpath=db.dir)
+
+fish_samples<-data.frame(sampleID=unique(fish_data$sampleID))%>%
+  mutate(method=str_split_fixed(sampleID, "_", 6)[,5],
+         sampleDate=str_split_fixed(sampleID, "_", 4)[,3],
+         sampleTime=str_split_fixed(sampleID, "_", 5)[,4],
+         date_time=ymd_hm(paste(sampleDate, sampleTime, sep="_")),
+         # adjust sampleDates for night electrofishing--if method==BE and sampleTime is in the evening before midnight, add one day to date.
+         adjust=ifelse(method=="BE" & sampleTime<2359 & sampleTime>1200, 1, 0),
+         adj_sampleDate=as.character(ymd(sampleDate)+days(1)),
+         batchDate=ifelse(adjust==1, adj_sampleDate, as.character(ymd(sampleDate))),
+         batchDate_method=paste(batchDate, method, sep="_"))
+
+fish_pe<-left_join(fish_data, fish_samples[,c("sampleID","batchDate_method")], by="sampleID")%>%
+  group_by(lakeID, batchDate_method)%>%
+  summarize(markedNow=sum(tagged, na.rm=T),
+            recapturedNow=sum(clipRecapture))%>%
+  mutate(marked_cum=cumsum(markedNow),
+         markedPrior=lag(marked_cum),
+         markedPrior=ifelse(is.na(markedPrior), 0, markedPrior),
+         allFishCaught=markedNow+recapturedNow)%>%
+  ungroup()
+
+# let's filter to lakes that had at least 1 recapture
+
+recap_count<-fish_pe%>%
+  group_by(lakeID)%>%
+  summarize(nRecap=sum(recapturedNow))%>%
+  arrange(desc(nRecap))%>%
+  filter(nRecap>0)
+
+recap_over_1<-filter(recap_count, nRecap>1)
+
+# surface area for Found lake was missing. Got it from WI DNR (find a lake tool) and converted to hectares
+lakes[lakes$lakeID=="FD",]$surfaceArea<-136.0
+
+fish_pe_recap<-fish_pe%>%
+  filter(lakeID%in%recap_count$lakeID)%>%
+  mutate(CtMt=allFishCaught*markedPrior)%>%
+  group_by(lakeID)%>%
+  summarize(sumCtMt=sum(CtMt),
+            sumRt=sum(recapturedNow))%>%
+  ungroup()%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
+
+```
+
+```{r}
+data.join<-full.data%>%
+  filter(lakeID%in%fish_pe_recap$lakeID)%>%
+  left_join(fish_pe_recap, by="lakeID")
+
+
+lakeID<-data.frame(lakeID=fish_pe_recap$lakeID,
+                   L=seq(1:13),
+                   sumCtMt=fish_pe_recap$sumCtMt,
+                   sumRt=fish_pe_recap$sumRt,
+                   surfaceArea=fish_pe_recap$surfaceArea)
+
+anglerID<-data.frame(caughtBy=unique(data.join$caughtBy),
+                     A=seq(1:18))
+
+dateID<-data.frame(date=unique(data.join$date),
+                   D=seq(1:42))
+
+data.indexed<-data.join%>%
+  left_join(dateID, by="date")%>%
+  left_join(anglerID, by="caughtBy")%>%
+  left_join(lakeID, by="lakeID")%>%
+  mutate(log_effort=log(effort))%>%
+  rename("lmbCatch"=nCaught)
+
+z_scores <- c(1.645, 0.674, 0, -0.674, -1.645)
+
+data.list<-list(N=nrow(data.indexed),
+                A=max(data.indexed$A),
+                D=max(data.indexed$D),
+                L=max(data.indexed$L),
+                AA=data.indexed$A,
+                DD=data.indexed$D,
+                LL=data.indexed$L,
+                lmbCatch=data.indexed$lmbCatch,
+                log_effort=data.indexed$log_effort,
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea,
+                z_scores = z_scores,
+                z_scores_long= rep(z_scores, each=21),
+                z_scores_best_worst_angler = rep(c(z_scores[1], z_scores[1], z_scores[5], z_scores[5]), each=21),
+                z_scores_best_worst_date = rep(c(z_scores[1], z_scores[5], z_scores[1], z_scores[5]), each=21),
+                z_scores_medium_angler = rep(c(z_scores[2], z_scores[2], z_scores[4], z_scores[4]), each=21),
+                z_scores_medium_date = rep(c(z_scores[2], z_scores[4], z_scores[2], z_scores[4]), each=21),
+                log_popDensity_pred=log(seq(1, 201, by=10))
+                )
+
+
+```
+
+
+```{r}
+#fit<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
+```
+
+```{r}
+set.seed(392)
+
+# phi was the main problem
+
+ inits<-function(){
+   # narrower distribution for initial phi value (high values were breaking model fits in some chains)
+   phi=rgamma(1,3)
+   # beta=rlnorm(1,-1,1)
+   # popDensity = rlnorm(1,0,2)
+   # log_mu_q_a~rnorm(1,0,1)
+   # log_mu_q_d~rnorm(1,0,1)
+   # log_mu_q_l~rnorm(1,0,1)
+   # q_a_raw~rnorm(1,0,1)
+   # q_d_raw~rnorm(1,0,1)
+   # q_l_raw~rnorm(1,0,1)
+   # sigma_q_a~rexp(1,1)
+   # sigma_q_d~rexp(1,1)
+   # sigma_q_l~rexp(1,1)
+ 
+   init<-list(phi=phi
+              # beta=beta,
+              # popDensity=popDensity,
+              # # log_mu_q_a=log_mu_q_a,
+              # # log_mu_q_d=log_mu_q_d,
+              # # log_mu_q_l=log_mu_q_l,
+              # q_a_raw=q_a_raw,
+              # q_d_raw=q_d_raw,
+              # q_l_raw=q_l_raw,
+              # sigma_q_a=sigma_q_a,
+              # sigma_q_d=sigma_q_d,
+              # sigma_q_l=sigma_q_l
+              )
+   return(init)
+ }
+
+fit_student<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_uninform_beta_10.stan"),
+                 data=data.list,
+                 #init=inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+saveRDS(fit_student, here("output_selected_model","fits","student_t_priors_10.rds"))
+
+post_student<-extract(fit_student)
+
+
+```
+
+```{r}
+prop_zero<-function(x) mean(x==0)
+
+log_lik_all_int<-extract_log_lik(fit_student, merge_chains=FALSE)
+r_eff_all_int<-relative_eff(exp(log_lik_all_int))
+loo_all_int<-loo(log_lik_all_int, r_eff=r_eff_all_int, cores=4, save_psis=TRUE)
+
+post_student<-extract(fit_student)
+ppc_dens_overlay(data.list$lmbCatch, post_student$posterior_pred_check[c(1:100),])+xlim(0,20)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_overlay_xlim_20.png"))
+
+ppc_dens_overlay(data.list$lmbCatch, post_student$posterior_pred_check[c(1:100),])
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_overlay_no_lim.png"))
+
+
+ppc_hist(data.list$lmbCatch, post_student$posterior_pred_check[c(1:5),])
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_hist_5_runs.png"))
+
+
+ppc_stat(data.list$lmbCatch, post_student$posterior_pred_check, stat="prop_zero", binwidth=0.005)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "prop_zero_compare.png"))
+
+ppc_stat(data.list$lmbCatch, post_student$posterior_pred_check, stat="max", binwidth=0.005)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "max_compare.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_student$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_overlay_angler_groups.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_student$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_overlay_lake_groups.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_student$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
+#ggsave(here("output_selected_model", "posterior_predictive_checks", "student_t", "posterior_overlay_date_groups.png"))
+
+
+```
+
+```{r}
+
+
+
+beta<-post_student$beta
+phi<-post_student$phi
+sigma_q_a<-(post_student$sigma_q_a)
+sigma_q_d<-(post_student$sigma_q_d)
+sigma_q_l<-(post_student$sigma_q_l)
+
+sigma_e<-post_student$log_resid_sd
+sigma_fixed<-post_student$sigma_fixed
+sigma_total<-post_student$sigma_total
+
+sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
+                           sd=sigma_total)
+
+sigma.fixed.df<-data.frame(param=c(rep("sigma_fixed", length(sigma_fixed))),
+                           sd=sigma_fixed)
+
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
+                           sd=sigma_e)
+
+sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
+                             rep("sigma_q_d", length(sigma_q_d)),
+                             rep("sigma_q_l", length(sigma_q_l))),
+                     sd=c(sigma_q_a, sigma_q_d, sigma_q_l))
+
+popDensity<-as.data.frame(post_student$popDensity)
+
+log_q_mu<-post_student$log_q_mu
+
+log_q_a<-as.data.frame(post_student$log_q_a)
+log_q_d<-as.data.frame(post_student$log_q_d)
+log_q_l<-as.data.frame(post_student$log_q_l)
+
+names_a<-paste0("angler_", seq(1:18))
+names_d<-as.character(unique(data.indexed$date))
+names_l<-paste0("lake_", seq(1:13))
+
+names(log_q_a)<-names_a
+names(log_q_d)<-names_d
+names(log_q_l)<-names_l
+
+
+# log.q.df<-data.frame(param=c(rep("log_q_mu", length(log_q_mu)),
+#                              rep("log_q_a", length(log_q_a)),
+#                              rep("log_q_d", length(log_q_d)),
+#                              rep("log_q_l", length(log_q_l))),
+#                      estimate=c(log_q_mu, log_q_a, log_q_d, log_q_l))
+
+
+angler_long<-log_q_a%>%
+  pivot_longer(cols=everything(), names_to="angler", values_to="angler_effect")%>%
+  mutate(angler=factor(angler, levels=c("angler_1","angler_2","angler_3","angler_4","angler_5","angler_6","angler_7","angler_8","angler_9","angler_10","angler_11","angler_12","angler_13","angler_14","angler_15","angler_16","angler_17","angler_18")))
+
+date_long<-log_q_d%>%
+  pivot_longer(cols=everything(), names_to="date", values_to="date_effect")%>%
+  mutate(date=as.factor(as.numeric(date)))
+  
+lake_long<-log_q_l%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="lake_effect")%>%
+  mutate(lake=factor(lake, levels=c("lake_1","lake_2","lake_3","lake_4","lake_5","lake_6","lake_7","lake_8","lake_9","lake_10","lake_11","lake_12","lake_13")))
+
+
+```
+
+density plot figures 
+
+fun color palettes
+
+```{r}
+library(scales)
+futurama<-pal_futurama("planetexpress")(12)
+simpsons<-pal_simpsons("springfield")(12)
+
+```
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e)),
+                                   sd=sigma_e))
+
+
+```{r}
+
+beta.df<-data.frame(param=rep("beta"), estimate=beta)
+
+
+sigma.total.plot<-ggplot(sigma.total.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
+  xlim(0,7)+
+  xlab(expression(sigma["total"]))+
+  ylab(expression(paste("p(", sigma["total"], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+
+sigma.e.plot<-ggplot(sigma.error.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
+  xlim(0,7)+
+  xlab(expression(sigma[epsilon]))+
+  ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+sigma.e.plot
+
+sigma.fixed.plot<-ggplot(sigma.fixed.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
+  xlim(0,7)+
+  xlab(expression(sigma[beta]))+
+  ylab(expression(paste("p(", sigma[beta], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+# beta.plot<-ggplot(beta.df)+
+#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
+#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
+#   xlim(0,7)+
+#   xlab(expression(beta))+
+#   ylab(expression(paste("p(", beta, "|catch)")))+
+#   theme_bw()
+# beta.plot
+
+sigma.random.plot<-ggplot(sigma.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
+  xlim(0,7)+
+  ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
+  xlab(expression(sigma))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=16))
+sigma.random.plot
+
+plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
+#plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
+#ggsave(here("output_selected_model","figures","beta.sigma.post_studenterior.png"), height=8, width=6)
+```
+
+Compare priors to posteriors
+For first round, set scale parameter of student t to 1. (popDensity was 50) (Note: first round I didnt' change sigma prior; I need to go back and do this)
+On next round, set parameter to 10. these are saved with _10 at tthe end. I changed the popDensity scale prior from 50 to 100
+```{r}
+popDensity.prior<-post_student$prior_t_popDensity[post_student$prior_t_popDensity>=0]
+half.t.prior<-post_student$prior_t_other[post_student$prior_t_other>=0]
+phi.prior<-post_student$prior_phi
+prior.sigma<-post_student$prior_sigma
+
+beta.prior<-half.t.prior
+phi.prior<-phi.prior
+sigma.q.priors<-prior.sigma
+
+post<-post_student
+
+popDensity.post<-post$popDensity
+beta.post<-post$beta
+phi.post<-post$phi
+sigma.q.a.post<-post$sigma_q_a
+sigma.q.d.post<-post$sigma_q_d
+sigma.q.l.post<-post$sigma_q_l
+
+popDensity.post.df<-as.data.frame(popDensity.post)
+names(popDensity.post.df)<-paste0("lake_", seq(1:13))
+
+popDensity.plot<-popDensity.post.df%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+
+ggplot()+
+  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
+    geom_density(aes(x=popDensity.prior), fill="gray", alpha=0.7)+
+  xlim(0,200)+
+  theme_bw()
+
+ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","popDensity_prior_check_100.png"))
+```
+
+popDensity.prior<-rlnorm(1000, 0, 2)
+beta.prior<-rlnorm(1000,-1,1)
+phi.prior<-rgamma(1000, 1, 2)
+sigma.q.priors<-rexp(1000, 1)
+
+post<-extract(fit_all_int, inc_warmup=FALSE)
+
+popDensity.post<-post$popDensity
+beta.post<-post$beta
+phi.post<-post$phi
+sigma.q.a.post<-post$sigma_q_a
+sigma.q.d.post<-post$sigma_q_d
+sigma.q.l.post<-post$sigma_q_l
+
+```{r}
+ggplot()+
+  geom_density(aes(x=beta.prior), fill="gray")+
+  geom_density(aes(x=beta.post), fill="lightblue")+
+  ggtitle("beta")+
+  xlim(0,10)+
+  theme_bw()
+  ggsave(here("output_selected_model", "prior_checks", "prior_checks_student", "beta_prior_check_10.png"))
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=phi.prior), fill="gray")+
+  geom_density(aes(x=phi.post), fill="lightblue")+
+  ggtitle("phi")+
+  xlim(0,10)+
+  theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","phi_prior_check_10.png"))
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray")+
+  # geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
+  # geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
+  # geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q.a.yellow.d.green.l.red")+
+  #xlim(0,7)+
+  theme_bw()
+ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","sigma_prior_check_10.png"))
+
+```
+The lake random effect may be more affected by the prior dist

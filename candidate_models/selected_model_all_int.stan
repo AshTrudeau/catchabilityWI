@@ -142,7 +142,7 @@ model {
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
   
   sumRt ~ poisson(sumCtMt ./ PE);
-  popDensity ~ lognormal(0,2);
+  popDensity ~ student_t(3, 0, 50);
   
   lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
@@ -160,7 +160,7 @@ model {
   
   log_q_mu ~ normal(0,1);
   
-  phi ~ gamma(1,2);
+  phi ~ gamma(1,1);
   beta ~ lognormal(-1, 1);
 
 }

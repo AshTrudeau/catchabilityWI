@@ -780,6 +780,12 @@ ggsave(here("output_selected_model", "prior_checks", "check_sigma_narrow_prior.p
 Beta being the other really important one
 
 ```{r}
+ggplot()+
+  geom_density(aes(x=rlnorm(1000, 0, 2)))
+```
+
+
+```{r}
 fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_wide_beta.stan"),
                  data=data.list,
                  ##init=init.phi,
