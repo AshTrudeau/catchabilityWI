@@ -1,19 +1,4 @@
 //
-
-// This is the model that was selected based on LOO CV
-
-// This model estimates bass population density using mark recapture data from 13 lakes. 
-// These estimates are then used as predictors in the catch equation, catch = effort * catchability * population density^beta, 
-// linearized to ln(catch) = ln(effort) + ln(catchability) + beta * ln(pop density). ln(catchability) is then broken down
-// into three random intercepts by angler, waterbody, and date, with the goal of partitioning variance in catch associated
-// with these effects outside of fisheries managers' control, relative to fish population density, which is the traditional
-// assumed predictor of catch and under (some) management influence. 
-
-// random effects are unbalanced and not nested
-
-// safe neg_binomial generated from here https://discourse.mc-stan.org/t/numerical-stability-of-gps-with-negative-binomial-likelihood/19343/3
-// (had problems w ith overflow during posterior predictions)
-
 functions{
    int neg_binomial_2_log_safe_rng(real eta, real phi) {
     real gamma_rate = gamma_rng(phi, phi / exp(eta));
@@ -21,6 +6,10 @@ functions{
     return poisson_rng(gamma_rate);
   }
 }
+
+
+
+// For model comparison, this is model with only angler effect
 
 data {
   // number of observations (205)
@@ -31,8 +20,8 @@ data {
   int<lower=1> D;
   // number of lakes (13)
   int<lower=1> L; 
-  
-  vector[5] z_scores;
+
+    vector[5] z_scores;
   vector[105] z_scores_long;
   vector[84] z_scores_best_worst_angler;
   vector[84] z_scores_best_worst_date;
@@ -40,8 +29,6 @@ data {
   vector[84] z_scores_medium_angler;
   vector[84] z_scores_medium_date;
 
-
-  
   // all observations of catch (response)
   array[N] int<lower=0> lmbCatch;
   
@@ -57,8 +44,8 @@ data {
   vector[L] sumCtMt;
   vector[L] surfaceArea;
   int sumRt[L];
-  
 
+  
 }
 
 
@@ -81,14 +68,10 @@ parameters {
   real<lower=0> sigma_q_d;
   real log_mu_q_d;
   
-  //waterbody/lake effect
-  real<lower=0> sigma_q_l;
-  real log_mu_q_l;
-  
+
   // for noncentered parameterization
   array[A] real q_a_raw;
   array[D] real q_d_raw;
-  array[L] real q_l_raw;
   // population estimate
   vector<lower=0>[L] PE;
 
@@ -101,9 +84,7 @@ transformed parameters{
   
   array[A] real log_q_a;
   array[D] real log_q_d;
-  array[L] real log_q_l;
-  
-  
+
   // for population density
   vector<lower=0>[L] popDensity;
   vector[L] log_popDensity;
@@ -116,21 +97,16 @@ transformed parameters{
 
 // note removal of log_mu_q_a/d/l, now wrapped into log_q_mu
 // update: divergent transitions problem when I did that; they've been put back in
-// tried again 8/7, this time doing it more correctly. Still had divergent transitions
-// forum post out to understand why, contact Chris if that doesn't help
   for(a in 1:A){
-    log_q_a[a] =  log_mu_q_a + sigma_q_a * q_a_raw[a];
+    log_q_a[a] =log_mu_q_a + sigma_q_a * q_a_raw[a];
   }
   for(d in 1:D){
     log_q_d[d] = log_mu_q_d + sigma_q_d * q_d_raw[d];
   }
-  for(l in 1:L){
-    log_q_l[l] =  log_mu_q_l + sigma_q_l * q_l_raw[l];
-  }
 
 for(i in 1:N){
 
-  logCatchHat[i] = log_effort[i] +  log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]];
+  logCatchHat[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + beta * log_popDensity_sc[LL[i]];
 }
 
 
@@ -140,29 +116,30 @@ model {
   
   //for population estimate, Poisson approximation of hypergeometric distribution
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
+  target += poisson_lpmf(sumRt | sumCtMt ./ PE);
+  target += lognormal_lpdf(popDensity | 0,2);
   
-  sumRt ~ poisson(sumCtMt ./ PE);
-  popDensity ~ lognormal(0,2);
-  
-  lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
-  
-  log_mu_q_a ~ normal(0,1);
-  log_mu_q_d ~ normal(0,1);
-  log_mu_q_l ~ normal(0,1);
-  
-  q_a_raw ~ normal(0,1);
-  q_d_raw ~ normal(0,1);
-  q_l_raw ~ normal(0,1);
-  
-  sigma_q_a ~ exponential(1);
-  sigma_q_d ~ exponential(1);
-  sigma_q_l ~ exponential(1);
-  
-  log_q_mu ~ normal(0,1);
-  
-  phi ~ gamma(1,2);
-  beta ~ lognormal(-1, 1);
+  target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
 
+  target += std_normal_lpdf(q_a_raw);
+  target += std_normal_lpdf(q_d_raw);
+
+  target += normal_lpdf(log_q_mu | 0,1);
+  // testing sensitivity of priors
+  //target += student_t_lpdf(log_q_mu |3, 0,1);
+
+
+  target += normal_lpdf(log_mu_q_a | 0,1);
+  target += normal_lpdf(log_mu_q_d | 0,1);
+
+
+  target += exponential_lpdf(sigma_q_a | 1);
+  target += exponential_lpdf(sigma_q_d | 1);
+
+  target += gamma_lpdf(phi| 1,2);
+
+  target += lognormal_lpdf(beta | -1,1);
+  
 }
 
 generated quantities{
@@ -226,7 +203,7 @@ generated quantities{
  
   
   // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
-  prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;
+  prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d;
   
   log_resid_var = trigamma(((1/prediction_b0)+(1/phi))^-1);
 
@@ -236,21 +213,20 @@ generated quantities{
   }
   
   sigma_2_fixed = variance(predict_fixed);
-  sigma_2_total=sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+(sigma_q_l)^2+log_resid_var;
+  sigma_2_total=sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+log_resid_var;
   
   r2_marginal = sigma_2_fixed/sigma_2_total;
-  r2_conditional = (sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+(sigma_q_l)^2)/sigma_2_total;
+  r2_conditional = (sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2)/sigma_2_total;
   
   ICC_a = (sigma_q_a)^2/sigma_2_total;
   ICC_d = (sigma_q_d)^2/sigma_2_total;
-  ICC_l = (sigma_q_l)^2/sigma_2_total;
-  
+
   sigma_total = sqrt(sigma_2_total);
   sigma_fixed = sqrt(sigma_2_fixed);
   log_resid_sd = sqrt(log_resid_var);
   
   for(i in 1:A){
-  predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+  predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d  + mean(log_popDensity_sc)*beta, phi);
   }
   
   // this gives log_q_a values for 95, 75, 5, 25, and 5 percentiles
@@ -265,7 +241,7 @@ generated quantities{
   // predict their mean catch of quantiles
   
   for(i in 1:5){
-    predict_quantile_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+    predict_quantile_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler[i] + log_mu_q_d +  mean(log_popDensity_sc)*beta, phi);
   }
   
   // predict mean catch of quantiles across population densities
@@ -280,7 +256,7 @@ generated quantities{
   log_popDensity_sc_rep = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,append_row(log_popDensity_pred_sc, log_popDensity_pred_sc))));
 
   for(i in 1:105){
-    predict_quantile_angler_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler_rep[i] + log_mu_q_d + log_mu_q_l + beta*log_popDensity_sc_rep[i],phi);
+    predict_quantile_angler_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + quantile_angler_rep[i] + log_mu_q_d  + beta*log_popDensity_sc_rep[i],phi);
   }  
   
   // now catch predictions across daily condition quantiles
@@ -293,12 +269,12 @@ generated quantities{
   }
 
   for(i in 1:5){
-    predict_quantile_date_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date[i] + log_mu_q_l + mean(log_popDensity_sc)*beta, phi);
+    predict_quantile_date_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date[i]  + mean(log_popDensity_sc)*beta, phi);
   }
 
   
     for(i in 1:105){
-    predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date_rep[i] + log_mu_q_l + beta*log_popDensity_sc_rep[i],phi);
+    predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date_rep[i] + beta*log_popDensity_sc_rep[i],phi);
   }  
 
   // for fun, the best and worst anglers on the best and worst days
@@ -317,7 +293,7 @@ generated quantities{
   log_popDensity_sc_best_worst = append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc, append_row(log_popDensity_pred_sc,log_popDensity_pred_sc)));
 
   for(i in 1:84){
-    predict_best_worst[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + best_worst_angler[i] + best_worst_date[i] + log_mu_q_l + beta*log_popDensity_sc_best_worst[i],phi);
+    predict_best_worst[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + best_worst_angler[i] + best_worst_date[i] + beta*log_popDensity_sc_best_worst[i],phi);
   }
 
 
@@ -330,7 +306,7 @@ generated quantities{
   }
   
   for(i in 1:84){
-    predict_medium[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + medium_angler[i] + medium_date[i] + log_mu_q_l + beta*log_popDensity_sc_best_worst[i],phi);
+    predict_medium[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + medium_angler[i] + medium_date[i] +  beta*log_popDensity_sc_best_worst[i],phi);
   }
 
 

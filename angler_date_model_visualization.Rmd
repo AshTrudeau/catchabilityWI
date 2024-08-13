@@ -1,0 +1,795 @@
+---
+title: "angler date model"
+output: html_document
+date: "2024-08-13"
+---
+---
+title: "model_summary_visualization"
+output: html_document
+date: "2024-08-08"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot)
+```
+
+Read in selected model fit, do some visualization on parameter estimates. Then revise model script (generated quantities block) to generate catch predictions for angler skill quantiles at mean popDensity and mean log_q_l, d. Finally, generate catch predictions across popDensities and dates
+
+```{r}
+rm(list=ls())
+```
+
+```{r}
+# raw catch data
+wd<-getwd()
+db.dir<-paste0(wd, "/MFEdb/")
+db<-"MFEdb_20220405.db"
+
+dbTableList(db.dir, db)
+
+lakes<-dbTable("lakes", fpath=db.dir, dbname=db)
+#crew<-dbTable("crew", fpath=db.dir, dbname=db)%>%
+#  filter(year%in%c("2018","2019"))
+#write.csv(crew, "crew.csv")
+
+# lake data
+
+lakes.key<-lakes%>%
+  dplyr::select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
+# Found lake missing surface area--135.97 ha
+lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
+
+
+projects<-dbTable("projects", fpath=db.dir, dbname=db)
+
+fishSamples<-dbTable("fish_samples", fpath=db.dir, dbname=db)%>%
+  filter(projectID%in%c("37") & gear=="AN")%>%
+    mutate(nAnglers=as.numeric(nAnglers),
+    effort=effort/nAnglers)
+
+
+fishInfo<-dbTable("fish_info", fpath=db.dir, dbname=db)%>%
+  filter(sampleID%in%fishSamples$sampleID)%>%
+  filter(str_length(caughtBy)<4)%>%
+  mutate(caughtBy=str_trim(caughtBy))%>%
+  filter(otu=="largemouth_bass")%>%
+  dplyr::select(projectID:caughtBy, comments)%>%
+  # join fishing effort
+  left_join(fishSamples[,c("lakeID","sampleID","dayOfYear","dateSample","dateTimeSample","crew","effort","effortUnits","nAnglers")], by="sampleID")
+
+# catch rates for each angler trip, correcting for some ambiguous initials first
+
+ALK.lake.date<-c("LV_20190608",
+                 "SM_20190615",
+                 "WN_20190617",
+                 "BY_20190622")
+
+AMK.lake.date<-c("DS_20190613",
+                 "BOT_20190615",
+                 "SM_20190621",
+                 "BOT_20190624",
+                 "NH_20190713")
+
+long.crew<-fishSamples%>%
+    mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))%>%
+  mutate(crewFix.ALK=ifelse(lakeID_date%in%ALK.lake.date & grepl("AK", crew), 1, 0),
+         crewFix.AMK=ifelse(lakeID_date%in%AMK.lake.date & grepl("AK", crew), 1, 0))%>%
+  mutate(crew=ifelse(crewFix.ALK==1, str_replace(crew, "AK", "ALK"), crew),
+         crew=ifelse(crewFix.AMK==1, str_replace(crew, "AK", "AMK"), crew))%>%
+  group_by(sampleID)%>%
+  summarize(crew=unique(crew),
+            effort=unique(effort))%>%
+  # split crew into columns and then pivot longer
+  separate("crew", paste("angler", 1:3, sep="_"), sep=", ", extra="drop")%>%
+  pivot_longer(cols=angler_1:angler_3, names_to="angler_num", values_to="caughtBy", values_drop_na=T)%>%
+  mutate(caughtBy=ifelse(caughtBy=="CMI","CI", caughtBy))%>%
+  mutate(date=str_split_fixed(sampleID, "_", 4)[,3],
+         lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         lakeID_date=paste(lakeID, date, sep="_"))
+
+ 
+ all.data<-fishInfo%>%
+  mutate(year=year(dateSample))%>%
+  left_join(lakes.key, by="lakeID")
+  
+
+  
+# now get catch rates from angling data and left join to long.crew. empty values can then be replaced with 0
+
+cpue<-all.data%>%
+  group_by(sampleID, caughtBy)%>%
+  summarize(nCaught=n())
+
+
+
+full.data<-long.crew%>%
+  left_join(cpue, by=c("sampleID", "caughtBy"))%>%
+  mutate(nCaught=ifelse(is.na(nCaught), 0, nCaught))
+
+
+```
+
+
+code for processing mark recap data
+
+```{r}
+fish_samples<-dbTable("fish_samples", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(useSampleMarkRecap=="yes")
+
+# ok, we want to do projects 37 and 38 separately. 37 used AF (anal fin) tags, 38 used PIT tags
+fish_info<-dbTable("fish_info", fpath=db.dir)%>%
+  filter(projectID%in%c("37"))%>%
+  filter(sampleID%in%fish_samples$sampleID)%>%
+  filter(otu=="largemouth_bass")
+
+fish_data<-inner_join(fish_samples, fish_info, by="sampleID")%>%
+  mutate(lakeID=str_split_fixed(sampleID, "_", 2)[,1],
+         clipRecapture=as.numeric(clipRecapture),
+         clipRecapture=ifelse(is.na(clipRecapture),0,clipRecapture),
+         tagged=ifelse(clipApply=="AF", 1, 0))
+
+samples<-unique(fish_data$sampleID)
+
+lakes<-dbTable("lakes", fpath=db.dir)
+
+fish_samples<-data.frame(sampleID=unique(fish_data$sampleID))%>%
+  mutate(method=str_split_fixed(sampleID, "_", 6)[,5],
+         sampleDate=str_split_fixed(sampleID, "_", 4)[,3],
+         sampleTime=str_split_fixed(sampleID, "_", 5)[,4],
+         date_time=ymd_hm(paste(sampleDate, sampleTime, sep="_")),
+         # adjust sampleDates for night electrofishing--if method==BE and sampleTime is in the evening before midnight, add one day to date.
+         adjust=ifelse(method=="BE" & sampleTime<2359 & sampleTime>1200, 1, 0),
+         adj_sampleDate=as.character(ymd(sampleDate)+days(1)),
+         batchDate=ifelse(adjust==1, adj_sampleDate, as.character(ymd(sampleDate))),
+         batchDate_method=paste(batchDate, method, sep="_"))
+
+fish_pe<-left_join(fish_data, fish_samples[,c("sampleID","batchDate_method")], by="sampleID")%>%
+  group_by(lakeID, batchDate_method)%>%
+  summarize(markedNow=sum(tagged, na.rm=T),
+            recapturedNow=sum(clipRecapture))%>%
+  mutate(marked_cum=cumsum(markedNow),
+         markedPrior=lag(marked_cum),
+         markedPrior=ifelse(is.na(markedPrior), 0, markedPrior),
+         allFishCaught=markedNow+recapturedNow)%>%
+  ungroup()
+
+# let's filter to lakes that had at least 1 recapture
+
+recap_count<-fish_pe%>%
+  group_by(lakeID)%>%
+  summarize(nRecap=sum(recapturedNow))%>%
+  arrange(desc(nRecap))%>%
+  filter(nRecap>0)
+
+recap_over_1<-filter(recap_count, nRecap>1)
+
+# surface area for Found lake was missing. Got it from WI DNR (find a lake tool) and converted to hectares
+lakes[lakes$lakeID=="FD",]$surfaceArea<-136.0
+
+fish_pe_recap<-fish_pe%>%
+  filter(lakeID%in%recap_count$lakeID)%>%
+  mutate(CtMt=allFishCaught*markedPrior)%>%
+  group_by(lakeID)%>%
+  summarize(sumCtMt=sum(CtMt),
+            sumRt=sum(recapturedNow))%>%
+  ungroup()%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
+
+```
+
+```{r}
+data.join<-full.data%>%
+  filter(lakeID%in%fish_pe_recap$lakeID)%>%
+  left_join(fish_pe_recap, by="lakeID")
+
+
+lakeID<-data.frame(lakeID=fish_pe_recap$lakeID,
+                   L=seq(1:13),
+                   sumCtMt=fish_pe_recap$sumCtMt,
+                   sumRt=fish_pe_recap$sumRt,
+                   surfaceArea=fish_pe_recap$surfaceArea)
+
+anglerID<-data.frame(caughtBy=unique(data.join$caughtBy),
+                     A=seq(1:18))
+
+dateID<-data.frame(date=unique(data.join$date),
+                   D=seq(1:42))
+
+data.indexed<-data.join%>%
+  left_join(dateID, by="date")%>%
+  left_join(anglerID, by="caughtBy")%>%
+  left_join(lakeID, by="lakeID")%>%
+  mutate(log_effort=log(effort))%>%
+  rename("lmbCatch"=nCaught)
+
+z_scores <- c(1.645, 0.674, 0, -0.674, -1.645)
+
+data.list<-list(N=nrow(data.indexed),
+                A=max(data.indexed$A),
+                D=max(data.indexed$D),
+                L=max(data.indexed$L),
+                AA=data.indexed$A,
+                DD=data.indexed$D,
+                LL=data.indexed$L,
+                lmbCatch=data.indexed$lmbCatch,
+                log_effort=data.indexed$log_effort,
+                sumCtMt=lakeID$sumCtMt,
+                sumRt=lakeID$sumRt,
+                surfaceArea=lakeID$surfaceArea,
+                z_scores = z_scores,
+                z_scores_long= rep(z_scores, each=21),
+                z_scores_best_worst_angler = rep(c(z_scores[1], z_scores[1], z_scores[5], z_scores[5]), each=21),
+                z_scores_best_worst_date = rep(c(z_scores[1], z_scores[5], z_scores[1], z_scores[5]), each=21),
+                z_scores_medium_angler = rep(c(z_scores[2], z_scores[2], z_scores[4], z_scores[4]), each=21),
+                z_scores_medium_date = rep(c(z_scores[2], z_scores[4], z_scores[2], z_scores[4]), each=21),
+                log_popDensity_pred=log(seq(1, 201, by=10))
+                )
+
+
+```
+
+
+```{r}
+#fit<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
+```
+
+```{r}
+set.seed(26)
+
+# phi was the main problem
+
+ inits<-function(){
+   # narrower distribution for initial phi value (high values were breaking model fits in some chains)
+   phi=rgamma(1,3)
+   # beta=rlnorm(1,-1,1)
+   # popDensity = rlnorm(1,0,2)
+   # log_mu_q_a~rnorm(1,0,1)
+   # log_mu_q_d~rnorm(1,0,1)
+   # log_mu_q_l~rnorm(1,0,1)
+   # q_a_raw~rnorm(1,0,1)
+   # q_d_raw~rnorm(1,0,1)
+   # q_l_raw~rnorm(1,0,1)
+   # sigma_q_a~rexp(1,1)
+   # sigma_q_d~rexp(1,1)
+   # sigma_q_l~rexp(1,1)
+ 
+   init<-list(phi=phi
+              # beta=beta,
+              # popDensity=popDensity,
+              # # log_mu_q_a=log_mu_q_a,
+              # # log_mu_q_d=log_mu_q_d,
+              # # log_mu_q_l=log_mu_q_l,
+              # q_a_raw=q_a_raw,
+              # q_d_raw=q_d_raw,
+              # q_l_raw=q_l_raw,
+              # sigma_q_a=sigma_q_a,
+              # sigma_q_d=sigma_q_d,
+              # sigma_q_l=sigma_q_l
+              )
+   return(init)
+ }
+
+fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int.stan"),
+                 data=data.list,
+                 #init=inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+saveRDS(fit_gen, here("output_angler_date_model","fits","model_with_predictions.rds"))
+
+post_gen<-extract(fit_gen)
+
+
+```
+
+First thing is a nice set of plots showing the posteriors of beta, each sigma, the mean intercept, and the angler-, lake-, and date-specific intercepts
+
+```{r}
+post<-extract(fit_gen)
+
+beta<-post$beta
+phi<-post$phi
+sigma_q_a<-(post$sigma_q_a)
+sigma_q_d<-(post$sigma_q_d)
+sigma_q_l<-(post$sigma_q_l)
+
+sigma_e<-post$log_resid_sd
+sigma_fixed<-post$sigma_fixed
+sigma_total<-post$sigma_total
+
+sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
+                           sd=sigma_total)
+
+sigma.fixed.df<-data.frame(param=c(rep("sigma_fixed", length(sigma_fixed))),
+                           sd=sigma_fixed)
+
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
+                           sd=sigma_e)
+
+sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
+                             rep("sigma_q_d", length(sigma_q_d)),
+                             rep("sigma_q_l", length(sigma_q_l))),
+                     sd=c(sigma_q_a, sigma_q_d, sigma_q_l))
+
+popDensity<-as.data.frame(post$popDensity)
+
+log_q_mu<-post$log_q_mu
+
+log_q_a<-as.data.frame(post$log_q_a)
+log_q_d<-as.data.frame(post$log_q_d)
+log_q_l<-as.data.frame(post$log_q_l)
+
+names_a<-paste0("angler_", seq(1:18))
+names_d<-as.character(unique(data.indexed$date))
+names_l<-paste0("lake_", seq(1:13))
+
+names(log_q_a)<-names_a
+names(log_q_d)<-names_d
+
+
+# log.q.df<-data.frame(param=c(rep("log_q_mu", length(log_q_mu)),
+#                              rep("log_q_a", length(log_q_a)),
+#                              rep("log_q_d", length(log_q_d)),
+#                              rep("log_q_l", length(log_q_l))),
+#                      estimate=c(log_q_mu, log_q_a, log_q_d, log_q_l))
+
+
+angler_long<-log_q_a%>%
+  pivot_longer(cols=everything(), names_to="angler", values_to="angler_effect")%>%
+  mutate(angler=factor(angler, levels=c("angler_1","angler_2","angler_3","angler_4","angler_5","angler_6","angler_7","angler_8","angler_9","angler_10","angler_11","angler_12","angler_13","angler_14","angler_15","angler_16","angler_17","angler_18")))
+
+date_long<-log_q_d%>%
+  pivot_longer(cols=everything(), names_to="date", values_to="date_effect")%>%
+  mutate(date=as.factor(as.numeric(date)))
+  
+
+
+```
+
+density plot figures 
+
+fun color palettes
+
+```{r}
+library(scales)
+futurama<-pal_futurama("planetexpress")(12)
+simpsons<-pal_simpsons("springfield")(12)
+
+```
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e)),
+                                   sd=sigma_e))
+
+
+```{r}
+
+beta.df<-data.frame(param=rep("beta"), estimate=beta)
+
+
+sigma.total.plot<-ggplot(sigma.total.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
+  xlim(0,7)+
+  xlab(expression(sigma["total"]))+
+  ylab(expression(paste("p(", sigma["total"], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+
+sigma.e.plot<-ggplot(sigma.error.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
+  xlim(0,7)+
+  xlab(expression(sigma[epsilon]))+
+  ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+sigma.e.plot
+
+sigma.fixed.plot<-ggplot(sigma.fixed.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
+  xlim(0,7)+
+  xlab(expression(sigma[beta]))+
+  ylab(expression(paste("p(", sigma[beta], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+# beta.plot<-ggplot(beta.df)+
+#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
+#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
+#   xlim(0,7)+
+#   xlab(expression(beta))+
+#   ylab(expression(paste("p(", beta, "|catch)")))+
+#   theme_bw()
+# beta.plot
+
+sigma.random.plot<-ggplot(sigma.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
+  xlim(0,7)+
+  ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
+  xlab(expression(sigma))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=16))
+sigma.random.plot
+
+plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
+#plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
+ggsave(here("output_angler_date_model","figures","beta.sigma.posterior.png"), height=8, width=6)
+```
+ICC
+```{r}
+icc.df<-data.frame(group=c(rep("Angler effect", 8000), rep("Date effect", 8000), rep("Lake effect", 8000)),
+                     ICC=c(post_gen$ICC_a, post_gen$ICC_d, post_gen$ICC_l))
+
+ggplot(icc.df)+
+  geom_density(aes(x=ICC, fill=group), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="")+
+  ylab(expression(paste("p(", ICC["a,d,l"], "|catch)")))+
+  xlab("Intraclass Correlation Coefficient")+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_angler_date_model","figures","ICC_density.png"), height=4, width=6)
+
+
+```
+```{r}
+r2.df<-data.frame(type=c(rep("marginal", 8000), rep("conditional", 8000)),
+                  r2=c(post_gen$r2_marginal, post_gen$r2_conditional))
+
+ggplot(r2.df)+
+  geom_density(aes(x=r2, fill=type), alpha=0.7)+
+  scale_fill_manual(values=simpsons[c(1,2)], name="")+
+  ylab(expression(paste("p(", R^2, "|catch)")))+
+  xlab(expression(R^2))+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_angler_date_model","figures","R2_density.png"), height=4, width=6)
+
+```
+
+
+So comparing the sd of each of the random effects to the unexplained sd, wow. Important to note that this is on the log scale
+
+```{r}
+angler_long_plot<-angler_long%>%
+  group_by(angler)%>%
+  summarize(mean=mean(angler_effect), 
+            sd=sd(angler_effect),
+            upper95=mean+1.96*sd,
+            lower95=mean-1.96*sd)%>%
+  ungroup()%>%
+  mutate(angler=as.factor(as.numeric(str_replace(angler, "angler_", ""))))
+
+angler<-ggplot(angler_long_plot)+
+  geom_point(aes(x=mean, y=angler))+
+  geom_errorbarh(aes(y=angler, xmin=lower95, xmax=upper95))+
+  ylab("Angler observed")+
+  xlab(expression(paste("Angler skill effect (ln", q["a"], ")")))+
+  theme_bw()
+
+  
+  angler
+  ggsave(here("output_angler_date_model","figures","angler.effects.png"), height=4, width=6)
+```
+
+```{r}
+date_long_plot<-date_long%>%
+  group_by(date)%>%
+  summarize(mean=mean(date_effect), 
+            sd=sd(date_effect),
+            upper95=mean+1.96*sd,
+            lower95=mean-1.96*sd)%>%
+  ungroup()%>%
+  mutate(date=as.factor(ymd(date)))
+
+date<-ggplot(date_long_plot)+
+  geom_point(aes(x=mean, y=date))+
+  geom_errorbarh(aes(y=date, xmin=lower95, xmax=upper95))+
+  ylab("Date observed")+
+  xlab(expression(paste("Daily conditions effect (ln", q["d"], ")")))+
+  theme_bw()
+
+  
+  date
+  ggsave(here("output_angler_date_model","figures","date.effects.png"), height=6, width=6)
+
+```
+
+Lake effect
+Now predictions of mean catch for each angler--are violin plots really appropriate since they're discrete predictions?
+
+```{r}
+angler.pred<-as.data.frame(post_gen$predict_angler_catch)
+
+names(angler.pred)<-paste0("angler_", seq(1:18))
+
+angler.pred.long<-angler.pred%>%
+  pivot_longer(cols=everything(), names_to="angler", values_to="catch")%>%
+  mutate(angler=as.factor(as.numeric(str_replace(angler, "angler_", ""))))
+
+ggplot(angler.pred.long)+
+  geom_violin(aes(x=angler, y=catch), fill=futurama[7])+
+  theme_bw()+
+  theme(legend.position="none")+
+  coord_flip()+
+  xlab("Angler observed")+
+  ylab("Predicted mean catch")
+ggsave(here::here("output_angler_date_model","figures","angler.mean.pred.catch.png"), height=6, width=4)
+```
+That's not very useful for readers; instead do quantiles
+
+```{r}
+quant.catch.df<-as.data.frame(post_gen$predict_quantile_catch)
+
+names(quant.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
+
+quant.catch.long<-quant.catch.df%>%
+  pivot_longer(cols=everything(), names_to="Angler skill", values_to="Mean catch")%>%
+  mutate(`Angler skill`=factor(`Angler skill`, levels=c("5th", "25th", "50th", "75th", "95th")))
+
+quant.catch.sum<-quant.catch.long%>%
+  group_by(`Angler skill`)%>%
+  summarize(mean=mean(`Mean catch`),
+            median=median(`Mean catch`),
+            sd=sd(`Mean catch`),
+            upper=mean+1.96*sd,
+            lower=mean-1.96*sd)
+
+ggplot(quant.catch.long)+
+  geom_violin(aes(x=`Angler skill`, y=`Mean catch`), fill=futurama[1], adjust=2)+
+  geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=mean), size=3)+
+  geom_point(data=quant.catch.sum, aes(x=`Angler skill`, y=median), size=3, color="gray")+
+  coord_flip()+
+  xlab(expression(paste("Angler catch power percentile (ln ", "q"["a"], ")")))+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+  theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_angler_date_model","figures", "percentile.catch.violin.png"), height=4, width=6)
+```
+
+Finally for these quantiles of anglers across a range of population densities
+
+Showing here: there is a lot of unexplained variation, yes. The mean effect of angler skill and daily conditions, however, is still in the range that's noticeable
+
+55 rows of predictions
+```{r}
+popDensity<-rep(seq(1,201, by=10), 5)
+percentile<-rep(c("95%","75%","50%","25%","5%"), each=21)
+
+
+angler.pred.pop<-post_gen$predict_quantile_angler_catch_popDens
+
+catch.angler.df<-data.frame(popDensity=popDensity,
+                            percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
+                            meanCatch=colMeans(angler.pred.pop))
+
+gradient.a<-c("#ffdce2","#ffced1","#ffafa6","#ff8d6b","#FF6F00FF")
+
+ggplot(catch.angler.df)+
+  geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
+  scale_color_manual(values=gradient.a)+
+  guides(color=guide_legend(title=expression(paste("Angler skill\neffect percentile"))))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_angler_date_model","figures","angler.effect.popDensity.png"), height=4, width=6)
+```
+Next daily conditions
+
+```{r}
+quant.date.catch.df<-as.data.frame(post_gen$predict_quantile_date_catch)
+
+names(quant.date.catch.df)<-c("95th", "75th", "50th", "25th", "5th")
+
+quant.date.catch.long<-quant.date.catch.df%>%
+  pivot_longer(cols=everything(), names_to="Day effect", values_to="Mean catch")%>%
+  mutate(`Day effect`=factor(`Day effect`, levels=c("5th", "25th", "50th", "75th", "95th")))
+
+quant.date.catch.sum<-quant.date.catch.long%>%
+  group_by(`Day effect`)%>%
+  summarize(mean=mean(`Mean catch`),
+            median=median(`Mean catch`),
+            sd=sd(`Mean catch`),
+            upper=mean+1.96*sd,
+            lower=mean-1.96*sd)
+
+ggplot(quant.date.catch.long)+
+  geom_violin(aes(x=`Day effect`, y=`Mean catch`), fill="#8A4198FF", adjust=2)+
+  geom_point(data=quant.date.catch.sum, aes(x=`Day effect`, y=mean), size=3)+
+  geom_point(data=quant.date.catch.sum, aes(x=`Day effect`, y=median), size=3, color="gray")+
+  coord_flip()+
+  xlab(expression(paste("Day effect percentile (ln ", "q"["d"], ")")))+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+  theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_angler_date_model","figures", "percentile.day.catch.violin.png"), height=4, width=6)
+
+```
+
+
+```{r}
+popDensity<-rep(seq(1,201, by=10), 5)
+percentile<-rep(c("95%","75%","50%","25%","5%"), each=21)
+
+
+date.pred.pop<-post_gen$predict_quantile_date_catch_popDens
+
+catch.date.df<-data.frame(popDensity=popDensity,
+                            percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
+                            meanCatch=colMeans(date.pred.pop))
+
+gradient.a<-c("#efd2dd","#d9a6c3","#bf7caf","#9e55a0","#8A4198FF")
+
+ggplot(catch.date.df)+
+  geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
+  scale_color_manual(values=gradient.a)+
+  guides(color=guide_legend(title=expression(paste("Daily conditions\neffect percentile"))))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16))
+
+ggsave(here("output_angler_date_model","figures","date.effect.popDensity.png"), height=4, width=6)
+
+
+```
+As we'd expect from the sigma_d distribution, it's very similar
+
+Effects together? highest percentiles and lowest percentiles
+
+
+
+
+```{r}
+quantiles<-c("95%", "5%")
+
+
+best.worst.df<-data.frame(pred.catch=colMeans(post_gen$predict_best_worst),
+                          pop.density=rep(seq(1, 201, by=10), 4),
+                          quant.angler=factor(rep(quantiles, each=42), levels=c("5%","95%")),
+                          quant.date=factor(rep(quantiles, each=21), levels=c("5%","95%")))%>%
+  mutate(group=ifelse(quant.angler=="95%" & quant.date=="95%", "High skill,\ngood conditions",
+                      ifelse(quant.angler=="95%" & quant.date=="5%", "High skill,\npoor conditions",
+                             ifelse(quant.angler=="5%" & quant.date=="95%", "Low skill,\ngood conditions",
+                                    ifelse(quant.angler=="5%" & quant.date=="5%", "Low skill,\npoor conditions", "error")))),
+         facet=ifelse(quant.angler=="95%", "High skill (95th percentile)", "Low skill (5th percentile)"),
+         legend=ifelse(quant.date=="95%", "Good (95th percentile)", "Poor (5th percentile)"))
+
+ggplot(best.worst.df)+
+  geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  scale_color_manual(values=c("red","blue"))+
+  xlim(0,150)+
+  facet_grid(.~facet)+
+  guides(color=guide_legend(title="Daily conditions"))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16),
+        strip.text.x=element_text(size=11),
+        legend.text=element_text(size=11),
+        legend.title=element_text(size=12))
+ggsave(here("output_angler_date_model","figures","best.worst.comparison.png"), height=4, width=8)
+
+```
+
+Ah, right, it's a multiplicative effect of angler skill and daily conditions. 
+
+I'd like a version with 75-25 because these extremes are wild. 
+
+```{r}
+quantiles<-c("75%", "25%")
+
+
+medium.df<-data.frame(pred.catch=colMeans(post_gen$predict_medium),
+                          pop.density=rep(seq(1, 201, by=10), 4),
+                          quant.angler=factor(rep(quantiles, each=42), levels=c("25%","75%")),
+                          quant.date=factor(rep(quantiles, each=21), levels=c("25%","75%")))%>%
+  mutate(facet=ifelse(quant.angler=="75%", "Higher skill (75th percentile)", "Lower skill (25th percentile)"),
+         legend=ifelse(quant.date=="75%", "Good (75th percentile)", "Poor (25th percentile)"))
+
+ggplot(medium.df)+
+  geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  scale_color_manual(values=c("red","blue"))+
+  xlim(0,150)+
+  facet_grid(.~facet)+
+  guides(color=guide_legend(title="Daily conditions"))+
+  xlab("Population density (1/ha)")+
+  ylab("Predicted mean catch")+
+  theme_bw()+
+    theme(axis.title.y=element_text(size=16),
+        axis.text.y=element_text(size=12),
+        axis.text.x=element_text(size=12),
+        axis.title.x=element_text(size=16),
+        strip.text.x=element_text(size=11),
+        legend.text=element_text(size=11),
+        legend.title=element_text(size=12))
+ggsave(here("output_angler_date_model","figures","medium.comparison.png"), height=4, width=8)
+
+```
+
+
+do a quick cross-tab
+
+```{r}
+all_anglers<-data.indexed$caughtBy
+all_dates<-data.indexed$date
+all_lakes<-data.indexed$lakeID
+
+crosstab.df<-data.frame(anglers=all_anglers,
+                        dates=all_dates,
+                        lakes=all_lakes)
+
+crosstab.df.dist<-distinct(crosstab.df)
+
+angler.tab<-crosstab.df.dist%>%
+  mutate(years=year(ymd(dates)))%>%
+  group_by(anglers)%>%
+  summarize(nyears=length(unique(years)))
+angler.tab
+
+lake.tab<-crosstab.df.dist%>%
+  mutate(year=year(ymd(dates)))%>%
+  group_by(lakes)%>%
+  summarize(nyear=length(unique(year)))
+
+lake.tab
+
+
+lake.anglers<-crosstab.df.dist%>%
+  group_by(lakes)%>%
+  summarize(nanglers=length(unique(anglers)))
+
+lake.anglers
+
+lake.dates<-crosstab.df.dist%>%
+  group_by(lakes)%>%
+  summarize(ndates=length(unique(dates)))%>%
+  ungroup()%>%
+  left_join(lake.anglers, by="lakes")
+
+lake.dates
+
+crosstab.df.dist%>%
+  group_by(lakes, anglers)%>%
+  summarize(ndates=length(unique(dates)))
+```
+
