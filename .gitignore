@@ -3,7 +3,6 @@
 .RData
 .Ruserdata
 candidate_models/candidate_model_fits
-output_selected_model/
 programming_supplement.pdf
 plots.7.2.24/
 pictures\ from\ angling\ survey/
@@ -18,6 +17,5 @@ compare.zinf.no.zinf/
 catchability\ notes.docx
 anglerInfo.xlsx
 MFEdb/
-output_selected_model/
 output_angler_date_model/
 old_folder_cleanup/
