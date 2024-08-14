@@ -100,28 +100,38 @@ model {
   //for population estimate, Poisson approximation of hypergeometric distribution
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
   target += poisson_lpmf(sumRt | sumCtMt ./ PE);
-  target += lognormal_lpdf(popDensity | 0,2);
+  //target += lognormal_lpdf(popDensity | 0,2);
+  target += student_t_lpdf(popDensity | 3,0,50);
+
   
   target += neg_binomial_2_log_lpmf(lmbCatch | logCatchHat, phi);
 
-  target += std_normal_lpdf(q_a_raw);
-  target += std_normal_lpdf(q_l_raw);
+  target += normal_lpdf(q_a_raw|0,1);
+  target += normal_lpdf(q_l_raw|0,1);
   
-  target += normal_lpdf(log_q_mu | 0,1);
+ // target += normal_lpdf(log_q_mu | 0,1);
   // testing sensitivity of priors
-  //target += student_t_lpdf(log_q_mu |3, 0,1);
+  target += student_t_lpdf(log_q_mu |3, 0,1);
 
 
-  target += normal_lpdf(log_mu_q_a | 0,1);
-  target += normal_lpdf(log_mu_q_l | 0,1);
+  //target += normal_lpdf(log_mu_q_a | 0,1);
+  //target += normal_lpdf(log_mu_q_l | 0,1);
+  target += student_t_lpdf(log_mu_q_a | 3,0,1);
+  target += student_t_lpdf(log_mu_q_l | 3,0,1);
+
+
+  //target += exponential_lpdf(sigma_q_a | 1);
+  //target += exponential_lpdf(sigma_q_l | 1);
+  target += student_t_lpdf(sigma_q_a | 3,0,1);
+  target += student_t_lpdf(sigma_q_l | 3,0,1);
+
   
+  //target += gamma_lpdf(phi| 1,2);
+    target += gamma_lpdf(phi| 1,0.5);
 
-  target += exponential_lpdf(sigma_q_a | 1);
-  target += exponential_lpdf(sigma_q_l | 1);
-  
-  target += gamma_lpdf(phi| 1,2);
 
-  target += lognormal_lpdf(beta | -1,1);
+  //target += lognormal_lpdf(beta | -1,1);
+  target += student_t_lpdf(beta | 3,0,1);
   
 }
 

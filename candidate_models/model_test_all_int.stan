@@ -122,26 +122,39 @@ model {
   //stan cannot estimate integers as parameters, so can't do hypergeometric dist directly
   
   sumRt ~ poisson(sumCtMt ./ PE);
-  popDensity ~ lognormal(0,2);
+  //popDensity ~ lognormal(0,2);
+  popDensity ~ student_t(3,0,50);
   
   lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
-  log_mu_q_a ~ normal(0,1);
-  log_mu_q_d ~ normal(0,1);
-  log_mu_q_l ~ normal(0,1);
+  //log_mu_q_a ~ normal(0,1);
+  //log_mu_q_d ~ normal(0,1);
+  //log_mu_q_l ~ normal(0,1);
+    log_mu_q_a ~ student_t(3,0,1);
+  log_mu_q_d ~ student_t(3,0,1);
+  log_mu_q_l ~ student_t(3,0,1);
+
   
   q_a_raw ~ normal(0,1);
   q_d_raw ~ normal(0,1);
   q_l_raw ~ normal(0,1);
   
-  sigma_q_a ~ exponential(1);
-  sigma_q_d ~ exponential(1);
-  sigma_q_l ~ exponential(1);
+  //sigma_q_a ~ exponential(1);
+  //sigma_q_d ~ exponential(1);
+  //sigma_q_l ~ exponential(1);
   
-  log_q_mu ~ normal(0,1);
+  sigma_q_a ~ student_t(3,0,1);
+  sigma_q_d ~ student_t(3,0,1);
+  sigma_q_l ~ student_t(3,0,1);
+
   
-  phi ~ gamma(1,2);
-  beta ~ lognormal(-1, 1);
+  //log_q_mu ~ normal(0,1);
+  log_q_mu ~ student_t(3,0,1);
+  
+  //phi ~ gamma(1,2);
+  phi ~ gamma(1, 0.5);
+  //beta ~ lognormal(-1, 1);
+  beta ~ student_t(3,0,1);
 
 }
 

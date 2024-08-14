@@ -105,7 +105,7 @@ full.data<-long.crew%>%
 
 # looking at some outliers
 
-View(full.data)
+#View(full.data)
 
 # join on mark recap data (sumCtRt and sumRt) and surface area
 
@@ -229,7 +229,6 @@ prop_zero<-function(x) mean(x==0)
 ```
 
 ```{r}
-set.seed(263)
 
 # phi was the main problem
 
@@ -303,6 +302,7 @@ init.phi<-function(){
 Fit maximal model with random intercepts by angler, date, and lake, and random beta by angler
 
 ```{r}
+set.seed(263)
 
 fit_vary_slope<-stan(file=here("candidate_models","varying.effects.beta.stan"),
                  data=data.list,
@@ -315,7 +315,7 @@ fit_vary_slope<-stan(file=here("candidate_models","varying.effects.beta.stan"),
                  refresh=0)
 
 saveRDS(fit_vary_slope, here("candidate_models","candidate_model_fits","fit_vary_slope.rds"))
-
+#fit_vary_slope<-readRDS(here("candidate_models","candidate_model_fits","fit_vary_slope.rds"))
 post_vary_slope<-extract(fit_vary_slope)
 ppc_dens_overlay(data.list$lmbCatch, post_vary_slope$catch_pred[c(1:100),])
 
@@ -358,10 +358,11 @@ n.pointwise[n.pointwise[,6]>0.7,]
 obs 13, 130, and 172
 
 ```{r}
-data.problem<-data.indexed[c(13, 124, 130, 172),]
+data.problem<-data.indexed[c(10, 13, 50, 58, 130),]
+data.problem
 ```
+Yeah those were just some really good days. Bay is a weird lake because it has so many bass and so little fishing effort. Johnson has so much fishing effort, but Colin is just a good angler. Alex is also an outlier angler. 
 
-These are observations from Chelsea and Alex that are just outlier catch rates. Chelsea had a really good day on Bay, Alex had really good days on Lone Tree and White Birch
 Fit with only random intercepts
 working off of this for ppc: https://cran.r-project.org/web/packages/bayesplot/vignettes/graphical-ppcs.html
 

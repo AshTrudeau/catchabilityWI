@@ -146,22 +146,33 @@ model {
   
   lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
-  log_mu_q_a ~ normal(0,1);
-  log_mu_q_d ~ normal(0,1);
-  log_mu_q_l ~ normal(0,1);
+  //log_mu_q_a ~ normal(0,1);
+  //log_mu_q_d ~ normal(0,1);
+  //log_mu_q_l ~ normal(0,1);
+    
+  log_mu_q_a ~ student_t(3,0,1);
+  log_mu_q_d ~ student_t(3,0,1);
+  log_mu_q_l ~ student_t(3,0,1);
+
   
   q_a_raw ~ normal(0,1);
   q_d_raw ~ normal(0,1);
   q_l_raw ~ normal(0,1);
   
-  sigma_q_a ~ exponential(1);
-  sigma_q_d ~ exponential(1);
-  sigma_q_l ~ exponential(1);
+  //sigma_q_a ~ exponential(1);
+  //sigma_q_d ~ exponential(1);
+  //sigma_q_l ~ exponential(1);
+  sigma_q_a ~ student_t(3,0,1);
+  sigma_q_d ~ student_t(3,0,1);
+  sigma_q_l ~ student_t(3,0,1);
+
   
-  log_q_mu ~ normal(0,1);
+ // log_q_mu ~ normal(0,1);
+ log_q_mu ~ student_t(3,0,1);
   
-  phi ~ gamma(1,1);
-  beta ~ lognormal(-1, 1);
+  phi ~ gamma(1,0.5);
+  //beta ~ lognormal(-1, 1);
+  beta ~ student_t(3,0,1);
 
 }
 
@@ -187,6 +198,10 @@ generated quantities{
   real ICC_a;
   real ICC_d;
   real ICC_l;
+  
+  real prior_t_popDensity;
+  real prior_t_other;
+  real prior_phi;
   
   // for mean catch predictions of observed anglers
   array[A] int predict_angler_catch;
@@ -223,7 +238,11 @@ generated quantities{
   array[84] int predict_medium;
 
 
- 
+   prior_t_popDensity =student_t_rng(3, 0, 50);
+  prior_t_other =student_t_rng(3,0,1);
+  prior_phi = gamma_rng(1, 0.5);
+
+
   
   // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
   prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + log_mu_q_l;

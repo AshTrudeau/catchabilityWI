@@ -114,8 +114,8 @@ model {
   
   // population estimate
   sumRt ~ poisson(sumCtMt ./ PE);
-  popDensity ~ lognormal(0,1);
-  
+  //popDensity ~ lognormal(0,1);
+  popDensity ~ student_t(3, 0, 50);
 
   // angler_effect matrix: 
     // column 1 is angler-specific intercept
@@ -127,17 +127,23 @@ model {
   date_z_raw ~ normal(0,1);
   lake_z_raw ~ normal(0,1);
   
-  angler_global ~ normal(0,1);
-  sigma_angler ~ exponential(1);
+  //angler_global ~ normal(0,1);
+  angler_global ~ student_t(3,0,1);
+  //sigma_angler ~ exponential(1);
+  sigma_angler ~ student_t(3,0,1);
   
-  mu_date ~ normal(0,1);
-  mu_lake ~ normal(0,1);
+  //mu_date ~ normal(0,1);
+  //mu_lake ~ normal(0,1);
+  mu_date ~ student_t(3,0,1);
+  mu_lake~student_t(3,0,1);
   
-  sigma_date ~ exponential(1);
-  sigma_lake ~ exponential(1);
+  //sigma_date ~ exponential(1);
+  //sigma_lake ~ exponential(1);
+  sigma_date~student_t(3,0,1);
+  sigma_lake~student_t(3,0,1);
   
-  phi ~ gamma(1,2);
-  
+  //phi ~ gamma(1,2);
+  phi~gamma(1,0.5);
   
   
   for(i in 1:N){

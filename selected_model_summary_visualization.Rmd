@@ -174,6 +174,20 @@ fish_pe_recap<-fish_pe%>%
   ungroup()%>%
   left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")
 
+
+fish_pe_for_table<-fish_pe%>%
+  filter(lakeID%in%recap_count$lakeID)%>%
+  mutate(CtMt=allFishCaught*markedPrior)%>%
+  group_by(lakeID)%>%
+  summarize(sumCtMt=sum(CtMt),
+            sumRt=sum(recapturedNow),
+            sumCaught=sum(allFishCaught),
+            nSampleEvents=n())%>%
+  ungroup()%>%
+  left_join(lakes[,c("lakeID","surfaceArea")], by="lakeID")%>%
+    select(lakeID, surfaceArea, sumCaught, sumRt, nSampleEvents, sumCtMt)
+
+
 ```
 
 ```{r}
@@ -225,6 +239,42 @@ data.list<-list(N=nrow(data.indexed),
                 )
 
 
+```
+
+Lake table--name, WBIC, number (L), location, surface area, n observations, n marks, n recaps
+
+```{r}
+lakeTable.fs<-read_csv(here("data","lakeTable.update.3.csv"))
+
+units<-dbTable("units", fpath=db.dir, dbname=db)%>%
+  filter(tableName=="LAKES" & colName=="surfaceArea") 
+# yes, in hectares
+
+bay<-projects<-dbTable("lakes", fpath=db.dir, dbname=db)%>%
+  select(lakeID, lakeName, surfaceArea, lat, long, WBIC)%>%
+  filter(lakeID=="BA")
+
+
+n.obs<-data.indexed%>%
+  group_by(lakeID)%>%
+  # note that multiple entries were sometimes listed per angler effort block, so nDates*nAnglers!=nObs
+  summarize(nObs=n(),
+            nDates=length(unique(date)),
+            nAnglers=length(unique(caughtBy)))%>%
+  left_join(lakeTable.fs[c("lakeID","lakeName","WBIC","lat","long")], by="lakeID")
+
+bay.row<-c("BA",5,2,4,bay$lakeName, NA,  bay$lat, bay$long)
+
+lake.table.n<-rbind.data.frame(n.obs[1,], bay.row, n.obs[3:13,])%>%
+  left_join(lakeID[,c("lakeID", "L")], by="lakeID")%>%
+  left_join(fish_pe_for_table, by="lakeID")%>%
+  select(lakeName, L, WBIC, lat, long, surfaceArea ,nObs, nDates, nAnglers, 
+         sumCaught, sumRt, nSampleEvents, sumCtMt)%>%
+  rename("nAnglingObs"=nObs,
+         "nAnglingDates"=nDates,
+         "totalCaught"=sumCaught,
+         "totalRecaptured"=sumRt)
+write.csv(lake.table.n, here("output_selected_model","tables","lake.table.csv"))
 ```
 
 
@@ -284,20 +334,32 @@ post_gen<-extract(fit_gen)
 
 ```
 
+summary table
+```{r}
+
+fit.table<-rstan::summary(fit_gen, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l", "popDensity",
+                               "log_q_a","log_q_d","log_q_l",
+                               "log_q_mu","log_mu_q_a","log_mu_q_d","log_mu_q_l","q_a_raw",
+                         "q_d_raw","q_l_raw","lp__"))
+
+table.summary<-fit.table$summary
+write.csv(table.summary, here::here("output_selected_model","tables","fit_all_int_param_summary.csv"))
+```
+
+
 First thing is a nice set of plots showing the posteriors of beta, each sigma, the mean intercept, and the angler-, lake-, and date-specific intercepts
 
 ```{r}
-post<-extract(fit_gen)
 
-beta<-post$beta
-phi<-post$phi
-sigma_q_a<-(post$sigma_q_a)
-sigma_q_d<-(post$sigma_q_d)
-sigma_q_l<-(post$sigma_q_l)
+beta<-post_gen$beta
+phi<-post_gen$phi
+sigma_q_a<-(post_gen$sigma_q_a)
+sigma_q_d<-(post_gen$sigma_q_d)
+sigma_q_l<-(post_gen$sigma_q_l)
 
-sigma_e<-post$log_resid_sd
-sigma_fixed<-post$sigma_fixed
-sigma_total<-post$sigma_total
+sigma_e<-post_gen$log_resid_sd
+sigma_fixed<-post_gen$sigma_fixed
+sigma_total<-post_gen$sigma_total
 
 sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
                            sd=sigma_total)
@@ -313,13 +375,13 @@ sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
                              rep("sigma_q_l", length(sigma_q_l))),
                      sd=c(sigma_q_a, sigma_q_d, sigma_q_l))
 
-popDensity<-as.data.frame(post$popDensity)
+popDensity<-as.data.frame(post_gen$popDensity)
 
-log_q_mu<-post$log_q_mu
+log_q_mu<-post_gen$log_q_mu
 
-log_q_a<-as.data.frame(post$log_q_a)
-log_q_d<-as.data.frame(post$log_q_d)
-log_q_l<-as.data.frame(post$log_q_l)
+log_q_a<-as.data.frame(post_gen$log_q_a)
+log_q_d<-as.data.frame(post_gen$log_q_d)
+log_q_l<-as.data.frame(post_gen$log_q_l)
 
 names_a<-paste0("angler_", seq(1:18))
 names_d<-as.character(unique(data.indexed$date))
@@ -362,8 +424,78 @@ futurama<-pal_futurama("planetexpress")(12)
 simpsons<-pal_simpsons("springfield")(12)
 
 ```
-sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e)),
-                                   sd=sigma_e))
+
+compare posteriors with priors
+
+```{r}
+popDensity.prior<-post_gen$prior_t_popDensity[post_gen$prior_t_popDensity>=0]
+half.t.prior<-post_gen$prior_t_other[post_gen$prior_t_other>=0]
+phi.prior<-post_gen$prior_phi
+prior.sigma<-half.t.prior
+
+beta.prior<-half.t.prior
+sigma.q.priors<-half.t.prior
+
+post<-post_gen
+
+popDensity.post<-post$popDensity
+beta.post<-post$beta
+phi.post<-post$phi
+sigma.q.a.post<-post$sigma_q_a
+sigma.q.d.post<-post$sigma_q_d
+sigma.q.l.post<-post$sigma_q_l
+
+popDensity.post.df<-as.data.frame(popDensity.post)
+names(popDensity.post.df)<-paste0("lake_", seq(1:13))
+
+popDensity.plot<-popDensity.post.df%>%
+  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+
+ggplot()+
+  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
+    geom_density(aes(x=popDensity.prior), fill="gray", alpha=0.7,  bounds=c(0, Inf))+
+  xlim(0,200)+
+  theme_bw()
+
+ggsave(here("output_selected_model", "figures", "popDensity_prior_check.png"))
+```
+
+
+```{r}
+ggplot()+
+  geom_density(aes(x=beta.prior), bounds=c(0, Inf), fill="gray")+
+  geom_density(aes(x=beta.post), fill="lightblue")+
+  ggtitle("beta")+
+  xlim(0,10)+
+  theme_bw()
+  ggsave(here("output_selected_model", "figures",  "beta_prior_check.png"))
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=phi.prior), fill="gray",  bounds=c(0, Inf))+
+  geom_density(aes(x=phi.post), fill="lightblue")+
+  ggtitle("phi")+
+  xlim(0,15)+
+  theme_bw()
+ggsave(here("output_selected_model", "figures", "phi_prior_check.png"))
+
+```
+
+```{r}
+ggplot()+
+  geom_density(aes(x=sigma.q.priors), fill="gray",  bounds=c(0, Inf))+
+  geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
+  geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
+  geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+  ggtitle("sigma.q.a.yellow.d.green.l.red")+
+  xlim(0,10)+
+  theme_bw()
+ggsave(here("output_selected_model", "figures","sigma_prior_check.png"))
+
+```
+
 
 
 ```{r}
@@ -697,6 +829,10 @@ As we'd expect from the sigma_d distribution, it's very similar
 Effects together? highest percentiles and lowest percentiles
 
 
+```{r}
+show_col(simpsons)
+c( "#F05C3BFF", "#197EC0FF")
+```
 
 
 ```{r}
@@ -716,7 +852,7 @@ best.worst.df<-data.frame(pred.catch=colMeans(post_gen$predict_best_worst),
 
 ggplot(best.worst.df)+
   geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
-  scale_color_manual(values=c("red","blue"))+
+  scale_color_manual(values=c( "#F05C3BFF", "#197EC0FF"))+
   xlim(0,150)+
   facet_grid(.~facet)+
   guides(color=guide_legend(title="Daily conditions"))+
@@ -751,7 +887,7 @@ medium.df<-data.frame(pred.catch=colMeans(post_gen$predict_medium),
 
 ggplot(medium.df)+
   geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
-  scale_color_manual(values=c("red","blue"))+
+  scale_color_manual(values=c( "#F05C3BFF", "#197EC0FF"))+
   xlim(0,150)+
   facet_grid(.~facet)+
   guides(color=guide_legend(title="Daily conditions"))+
@@ -769,50 +905,197 @@ ggsave(here("output_selected_model","figures","medium.comparison.png"), height=4
 
 ```
 
-
-do a quick cross-tab
-
+Compare to angler date model
 ```{r}
-all_anglers<-data.indexed$caughtBy
-all_dates<-data.indexed$date
-all_lakes<-data.indexed$lakeID
-
-crosstab.df<-data.frame(anglers=all_anglers,
-                        dates=all_dates,
-                        lakes=all_lakes)
-
-crosstab.df.dist<-distinct(crosstab.df)
-
-angler.tab<-crosstab.df.dist%>%
-  mutate(years=year(ymd(dates)))%>%
-  group_by(anglers)%>%
-  summarize(nyears=length(unique(years)))
-angler.tab
-
-lake.tab<-crosstab.df.dist%>%
-  mutate(year=year(ymd(dates)))%>%
-  group_by(lakes)%>%
-  summarize(nyear=length(unique(year)))
-
-lake.tab
+set.seed(9287)
 
 
-lake.anglers<-crosstab.df.dist%>%
-  group_by(lakes)%>%
-  summarize(nanglers=length(unique(anglers)))
+fit_red<-stan(file=here("candidate_models","selected_model_angler_date_int.stan"),
+                 data=data.list,
+                 #init=inits,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=4,
+                 warmup=1000,
+                 iter=3000,
+                 cores=4,
+                 refresh=0)
+saveRDS(fit_red, here("output_selected_model","fits","reduced_model_with_predictions.rds"))
 
-lake.anglers
+post_red<-extract(fit_red)
 
-lake.dates<-crosstab.df.dist%>%
-  group_by(lakes)%>%
-  summarize(ndates=length(unique(dates)))%>%
-  ungroup()%>%
-  left_join(lake.anglers, by="lakes")
 
-lake.dates
-
-crosstab.df.dist%>%
-  group_by(lakes, anglers)%>%
-  summarize(ndates=length(unique(dates)))
 ```
 
+table
+
+```{r}
+fit.red.table<-rstan::summary(fit_red, pars=c("beta","phi","sigma_q_a","sigma_q_d","popDensity",
+                               "log_q_a","log_q_d",
+                               "log_q_mu","log_mu_q_a","log_mu_q_d","q_a_raw",
+                         "q_d_raw","lp__"))
+
+table.red.summary<-fit.red.table$summary
+write.csv(table.red.summary, here::here("output_selected_model","tables","fit_angler_date_int_param_summary.csv"))
+
+```
+
+First thing is a nice set of plots showing the posteriors of beta, each sigma, the mean intercept, and the angler-, lake-, and date-specific intercepts
+
+```{r}
+
+beta<-post_red$beta
+phi<-post_red$phi
+sigma_q_a<-(post_red$sigma_q_a)
+sigma_q_d<-(post_red$sigma_q_d)
+
+sigma_e<-post_red$log_resid_sd
+sigma_fixed<-post_red$sigma_fixed
+sigma_total<-post_red$sigma_total
+
+sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
+                           sd=sigma_total)
+
+sigma.fixed.df<-data.frame(param=c(rep("sigma_fixed", length(sigma_fixed))),
+                           sd=sigma_fixed)
+
+sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
+                           sd=sigma_e)
+
+sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
+                             rep("sigma_q_d", length(sigma_q_d))),
+                     sd=c(sigma_q_a, sigma_q_d))
+
+popDensity<-as.data.frame(post_red$popDensity)
+
+log_q_mu<-post_red$log_q_mu
+
+log_q_a<-as.data.frame(post_red$log_q_a)
+log_q_d<-as.data.frame(post_red$log_q_d)
+
+names_a<-paste0("angler_", seq(1:18))
+names_d<-as.character(unique(data.indexed$date))
+
+names(log_q_a)<-names_a
+names(log_q_d)<-names_d
+
+
+# log.q.df<-data.frame(param=c(rep("log_q_mu", length(log_q_mu)),
+#                              rep("log_q_a", length(log_q_a)),
+#                              rep("log_q_d", length(log_q_d)),
+#                              rep("log_q_l", length(log_q_l))),
+#                      estimate=c(log_q_mu, log_q_a, log_q_d, log_q_l))
+
+
+angler_long<-log_q_a%>%
+  pivot_longer(cols=everything(), names_to="angler", values_to="angler_effect")%>%
+  mutate(angler=factor(angler, levels=c("angler_1","angler_2","angler_3","angler_4","angler_5","angler_6","angler_7","angler_8","angler_9","angler_10","angler_11","angler_12","angler_13","angler_14","angler_15","angler_16","angler_17","angler_18")))
+
+date_long<-log_q_d%>%
+  pivot_longer(cols=everything(), names_to="date", values_to="date_effect")%>%
+  mutate(date=as.factor(as.numeric(date)))
+  
+
+
+```
+
+
+
+```{r}
+
+beta.df<-data.frame(param=rep("beta"), estimate=beta)
+
+
+sigma.total.plot<-ggplot(sigma.total.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
+  xlim(0,7)+
+  xlab(expression(sigma["total"]))+
+  ylab(expression(paste("p(", sigma["total"], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+
+sigma.e.plot<-ggplot(sigma.error.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
+  xlim(0,7)+
+  xlab(expression(sigma[epsilon]))+
+  ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+sigma.e.plot
+
+sigma.fixed.plot<-ggplot(sigma.fixed.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
+  xlim(0,7)+
+  xlab(expression(sigma[beta]))+
+  ylab(expression(paste("p(", sigma[beta], "|catch)")))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_blank())
+
+# beta.plot<-ggplot(beta.df)+
+#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
+#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
+#   xlim(0,7)+
+#   xlab(expression(beta))+
+#   ylab(expression(paste("p(", beta, "|catch)")))+
+#   theme_bw()
+# beta.plot
+
+sigma.random.plot<-ggplot(sigma.df)+
+  geom_density(aes(x=sd, fill=param), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
+  xlim(0,7)+
+  ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
+  xlab(expression(sigma))+
+  theme_bw()+
+  theme(legend.text=element_text(size=16),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=16))
+sigma.random.plot
+
+plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
+#plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
+ggsave(here("output_selected_model","figures","beta.sigma.post.reduced.png"), height=8, width=6)
+```
+ICC
+```{r}
+icc.df<-data.frame(group=c(rep("Angler effect", 8000), rep("Date effect", 8000)),
+                     ICC=c(post_red$ICC_a, post_red$ICC_d))
+
+ggplot(icc.df)+
+  geom_density(aes(x=ICC, fill=group), alpha=0.7)+
+  scale_fill_manual(values=futurama[c(1,4,3)], name="")+
+  ylab(expression(paste("p(", ICC["a,d,l"], "|catch)")))+
+  xlab("Intraclass Correlation Coefficient")+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_selected_model","figures","ICC_density.post.reduced.png"), height=4, width=6)
+
+
+```
+```{r}
+r2.df<-data.frame(type=c(rep("marginal", 8000), rep("conditional", 8000)),
+                  r2=c(post_red$r2_marginal, post_red$r2_conditional))
+
+ggplot(r2.df)+
+  geom_density(aes(x=r2, fill=type), alpha=0.7)+
+  scale_fill_manual(values=simpsons[c(1,2)], name="")+
+  ylab(expression(paste("p(", R^2, "|catch)")))+
+  xlab(expression(R^2))+
+  theme_bw()+
+    theme(legend.text=element_text(size=10),
+        axis.title.y=element_text(size=12),
+        axis.title.x=element_text(size=12))
+ggsave(here::here("output_selected_model","figures","R2_density.post.reduced.png"), height=4, width=6)
+
+```
