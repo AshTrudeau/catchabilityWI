@@ -357,18 +357,19 @@ sigma_q_a<-(post_gen$sigma_q_a)
 sigma_q_d<-(post_gen$sigma_q_d)
 sigma_q_l<-(post_gen$sigma_q_l)
 
-sigma_e<-post_gen$log_resid_sd
-sigma_fixed<-post_gen$sigma_fixed
-sigma_total<-post_gen$sigma_total
+sigma_random <-post_gen$sigma_random
 
-sigma.total.df<-data.frame(param=c(rep("sigma_total", length(sigma_total))),
-                           sd=sigma_total)
+sigma_fixed<-post_gen$sigma_fixed
+sigma_pred<-post_gen$sigma_pred
+
+sigma.pred.df<-data.frame(param=c(rep("sigma_predictions", length(sigma_pred))),
+                           sd=sigma_pred)
 
 sigma.fixed.df<-data.frame(param=c(rep("sigma_fixed", length(sigma_fixed))),
                            sd=sigma_fixed)
 
-sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
-                           sd=sigma_e)
+sigma.random.df<-data.frame(param=c(rep("sigma_random", length(sigma_random))),
+                           sd=sigma_random)
 
 sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
                              rep("sigma_q_d", length(sigma_q_d)),
@@ -503,34 +504,35 @@ ggsave(here("output_selected_model", "figures","sigma_prior_check.png"))
 beta.df<-data.frame(param=rep("beta"), estimate=beta)
 
 
-sigma.total.plot<-ggplot(sigma.total.df)+
+sigma.prediction.plot<-ggplot(sigma.pred.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
-  xlim(0,7)+
-  xlab(expression(sigma["total"]))+
-  ylab(expression(paste("p(", sigma["total"], "|catch)")))+
+  geom_vline(xintercept=sd(data.list$lmbCatch), linetype="dashed")+
+  scale_fill_manual(values=futurama[2], name="", labels=expression(sigma[hat(Catch)]))+
+  xlim(0,8)+
+  xlab(expression(sigma))+
+  ylab(expression(paste("p(", sigma[hat(Catch)], "|Catch)")))+
   theme_bw()+
   theme(legend.text=element_text(size=16),
         axis.title.y=element_text(size=14),
-        axis.title.x=element_blank())
+        axis.title.x=element_text(size=14))
 
 
-sigma.e.plot<-ggplot(sigma.error.df)+
-  geom_density(aes(x=sd, fill=param), alpha=0.7)+
-  scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
-  xlim(0,7)+
-  xlab(expression(sigma[epsilon]))+
-  ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
-  theme_bw()+
-  theme(legend.text=element_text(size=16),
-        axis.title.y=element_text(size=14),
-        axis.title.x=element_blank())
-sigma.e.plot
+# sigma.e.plot<-ggplot(sigma.error.df)+
+#   geom_density(aes(x=sd, fill=param), alpha=0.7)+
+#   scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
+#   xlim(0,7)+
+#   xlab(expression(sigma[epsilon]))+
+#   ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
+#   theme_bw()+
+#   theme(legend.text=element_text(size=16),
+#         axis.title.y=element_text(size=14),
+#         axis.title.x=element_blank())
+# sigma.e.plot
 
 sigma.fixed.plot<-ggplot(sigma.fixed.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
   scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
-  xlim(0,7)+
+  xlim(0,8)+
   xlab(expression(sigma[beta]))+
   ylab(expression(paste("p(", sigma[beta], "|catch)")))+
   theme_bw()+
@@ -538,19 +540,19 @@ sigma.fixed.plot<-ggplot(sigma.fixed.df)+
         axis.title.y=element_text(size=14),
         axis.title.x=element_blank())
 
-# beta.plot<-ggplot(beta.df)+
-#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
-#   xlim(0,7)+
-#   xlab(expression(beta))+
-#   ylab(expression(paste("p(", beta, "|catch)")))+
-#   theme_bw()
-# beta.plot
+ # beta.plot<-ggplot(beta.df)+
+ #   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
+ #   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
+ #   xlim(0,7)+
+ #   xlab(expression(beta))+
+ #   ylab(expression(paste("p(", beta, "|catch)")))+
+ #   theme_bw()
+ # beta.plot
 
 sigma.random.plot<-ggplot(sigma.df)+
   geom_density(aes(x=sd, fill=param), alpha=0.7)+
   scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
-  xlim(0,7)+
+  xlim(0,8)+
   ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
   xlab(expression(sigma))+
   theme_bw()+
@@ -559,47 +561,25 @@ sigma.random.plot<-ggplot(sigma.df)+
         axis.title.x=element_text(size=16))
 sigma.random.plot
 
-plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
+plot_grid(sigma.random.plot, sigma.fixed.plot,  sigma.prediction.plot, ncol=1, align="v")
 #plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
-ggsave(here("output_selected_model","figures","beta.sigma.posterior.png"), height=8, width=6)
+gsave(here("output_selected_model","figures","beta.sigma.posterior.png"), height=8, width=6)
 ```
-ICC
+
+
 ```{r}
-icc.df<-data.frame(group=c(rep("Angler effect", 8000), rep("Date effect", 8000), rep("Lake effect", 8000)),
-                     ICC=c(post_gen$ICC_a, post_gen$ICC_d, post_gen$ICC_l))
+obs<-data.list$lmbCatch
+pred<-post_gen$posterior_pred_check[50,]
 
-ggplot(icc.df)+
-  geom_density(aes(x=ICC, fill=group), alpha=0.7)+
-  scale_fill_manual(values=futurama[c(1,4,3)], name="")+
-  ylab(expression(paste("p(", ICC["a,d,l"], "|catch)")))+
-  xlab("Intraclass Correlation Coefficient")+
-  theme_bw()+
-    theme(legend.text=element_text(size=10),
-        axis.title.y=element_text(size=12),
-        axis.title.x=element_text(size=12))
-ggsave(here::here("output_selected_model","figures","ICC_density.png"), height=4, width=6)
-
-
-```
-```{r}
-r2.df<-data.frame(type=c(rep("marginal", 8000), rep("conditional", 8000)),
-                  r2=c(post_gen$r2_marginal, post_gen$r2_conditional))
-
-ggplot(r2.df)+
-  geom_density(aes(x=r2, fill=type), alpha=0.7)+
-  scale_fill_manual(values=simpsons[c(1,2)], name="")+
-  ylab(expression(paste("p(", R^2, "|catch)")))+
-  xlab(expression(R^2))+
-  theme_bw()+
-    theme(legend.text=element_text(size=10),
-        axis.title.y=element_text(size=12),
-        axis.title.x=element_text(size=12))
-ggsave(here::here("output_selected_model","figures","R2_density.png"), height=4, width=6)
-
+ggplot()+
+  geom_point(aes(x=obs, y=pred))+
+  geom_abline(slope=1, intercept=0, linetype="dashed")+
+  ylim(0,40)+
+  xlim(0,40)+
+  theme_bw()
 ```
 
 
-So comparing the sd of each of the random effects to the unexplained sd, wow. Important to note that this is on the log scale
 
 ```{r}
 angler_long_plot<-angler_long%>%
