@@ -300,7 +300,7 @@ sigma_q_a<-(post$sigma_q_a)
 sigma_q_d<-(post$sigma_q_d)
 sigma_q_l<-(post$sigma_q_l)
 
-sigma_e<-post$log_resid_sd
+sigma_e<-post$sigma_resid
 sigma_fixed<-post$sigma_fixed
 sigma_total<-post$sigma_total
 

@@ -156,8 +156,9 @@ generated quantities{
   //array[N] real posterior_pred_check;
   // model expectation for converting phi of catch NB distribution to sigma
   real prediction_b0;
-  real log_resid_var;
-  real log_resid_sd;
+  real sigma_2_resid;
+  real sigma_resid;
+  real lambda;
   
   // for sd of fixed effects only
   vector[N] predict_fixed;
@@ -213,15 +214,17 @@ generated quantities{
   // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
   prediction_b0 = mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d;
   
-  log_resid_var = trigamma(((1/prediction_b0)+(1/phi))^-1);
+  lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2+sigma_q_d^2));
+  
+  sigma_2_resid = trigamma(((1/lambda)+(1/phi))^(-1));
+
 
   for(i in 1:N){
-  predict_fixed[i] = log_effort[i] + log_q_mu + log_popDensity_sc[LL[i]] * beta;
-  //predict_fixed[i] = log_q_mu + log_popDensity_sc[LL[i]] * beta;
+  predict_fixed[i] = log_effort[i] + log_q_mu + log_mu_q_a + log_mu_q_d +log_popDensity_sc[LL[i]] * beta;
   }
   
   sigma_2_fixed = variance(predict_fixed);
-  sigma_2_total=sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+log_resid_var;
+  sigma_2_total=sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2+sigma_2_resid;
   
   r2_marginal = sigma_2_fixed/sigma_2_total;
   r2_conditional = (sigma_2_fixed+(sigma_q_a)^2+(sigma_q_d)^2)/sigma_2_total;
@@ -231,7 +234,7 @@ generated quantities{
 
   sigma_total = sqrt(sigma_2_total);
   sigma_fixed = sqrt(sigma_2_fixed);
-  log_resid_sd = sqrt(log_resid_var);
+  sigma_resid = sqrt(sigma_2_resid);
   
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d  + mean(log_popDensity_sc)*beta, phi);
