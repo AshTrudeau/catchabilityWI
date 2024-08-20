@@ -365,8 +365,10 @@ data.problem
 ```
 Yeah those were just some really good days. Bay is a weird lake because it has so many bass and so little fishing effort. Johnson has so much fishing effort, but Colin is just a good angler. Alex is also an outlier angler. 
 
-Fit with only random intercepts
 working off of this for ppc: https://cran.r-project.org/web/packages/bayesplot/vignettes/graphical-ppcs.html
+
+
+
 
 ```{r}
 fit_all_int<-stan(file=here("candidate_models","model_test_all_int.stan"),
@@ -378,7 +380,7 @@ fit_all_int<-stan(file=here("candidate_models","model_test_all_int.stan"),
                  iter=3000,
                  cores=4,
                  refresh=0)
-
+#fit_all_int<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
 saveRDS(fit_all_int, here("candidate_models","candidate_model_fits","fit_all_int.rds"))
 
 log_lik_all_int<-extract_log_lik(fit_all_int, merge_chains=FALSE)
@@ -387,34 +389,34 @@ loo_all_int<-loo(log_lik_all_int, r_eff=r_eff_all_int, cores=4, save_psis=TRUE)
 loo_all_int_2<-loo(fit_all_int, moment_match=TRUE)
 
 post_all_int<-extract(fit_all_int)
-ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])+xlim(0,20)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_xlim_20.png"))
-
-ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_no_lim.png"))
-
-
-ppc_hist(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:5),])
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_hist_5_runs.png"))
-
-
-ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="prop_zero", binwidth=0.005)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "prop_zero_compare.png"))
-
-ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="max", binwidth=0.005)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "max_compare.png"))
-
-
-ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_angler_groups.png"))
-
-
-ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_lake_groups.png"))
-
-
-ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
-ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_date_groups.png"))
+# ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])+xlim(0,20)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_xlim_20.png"))
+# 
+# ppc_dens_overlay(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:100),])
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_no_lim.png"))
+# 
+# 
+# ppc_hist(data.list$lmbCatch, post_all_int$posterior_pred_check[c(1:5),])
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_hist_5_runs.png"))
+# 
+# 
+# ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="prop_zero", binwidth=0.005)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "prop_zero_compare.png"))
+# 
+# ppc_stat(data.list$lmbCatch, post_all_int$posterior_pred_check, stat="max", binwidth=0.005)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "max_compare.png"))
+# 
+# 
+# ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_angler_groups.png"))
+# 
+# 
+# ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_lake_groups.png"))
+# 
+# 
+# ppc_dens_overlay_grouped(data.list$lmbCatch, post_all_int$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
+# ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_date_groups.png"))
 
 
 print(loo_all_int_2)
@@ -566,8 +568,42 @@ fit_angler_date<-stan(file=here("candidate_models","model_test_angler_date.stan"
                  iter=3000,
                  cores=4,
                  refresh=0)
+#fit_angler_date<-readRDS(here("candidate_models","candidate_model_fits","fit_angler_date.rds"))
 saveRDS(fit_angler_date, here("candidate_models","candidate_model_fits","fit_angler_date.rds"))
 
+post_angler_date<-extract(fit_angler_date)
+ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:100),])+xlim(0,20)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_xlim_20.png"))
+
+ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:100),])
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_no_lim.png"))
+
+
+ppc_hist(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:5),])
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_hist_5_runs.png"))
+
+
+ppc_stat(data.list$lmbCatch, post_angler_date$posterior_pred_check, stat="prop_zero", binwidth=0.005)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "prop_zero_compare.png"))
+
+ppc_stat(data.list$lmbCatch, post_angler_date$posterior_pred_check, stat="max", binwidth=0.005)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "max_compare.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_angler_date$posterior_pred_check[1:100,], group=data.list$AA)+xlim(0,10)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_angler_groups.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_angler_date$posterior_pred_check[1:100,], group=data.list$LL)+xlim(0,20)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_lake_groups.png"))
+
+
+ppc_dens_overlay_grouped(data.list$lmbCatch, post_angler_date$posterior_pred_check[1:100,], group=data.list$DD)+xlim(0,10)
+ggsave(here("output_selected_model", "posterior_predictive_checks", "posterior_overlay_date_groups.png"))
+
+
+```
+```{r}
 post_angler_date<-extract(fit_angler_date)
 ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[c(1:100),])
 
@@ -576,7 +612,6 @@ r_eff_angler_date<-relative_eff(exp(log_lik_angler_date))
 
 loo_angler_date<-loo(log_lik_angler_date, r_eff=r_eff_angler_date, cores=4)
 loo_angler_date_2<-loo(fit_angler_date, moment_match=TRUE)
-
 
 print(loo_angler_date_2)
 
@@ -657,7 +692,7 @@ loo_null<-loo(log_lik_null, r_eff=r_eff_null, cores=4)
 print(loo_null)
 
 ```
-
+wow those predictions are bad
 
 ```{r}
 # how does comp change if I specify simplify=FALSE?
@@ -667,7 +702,8 @@ print(comp, simplify=FALSE)
 
 comp.df<-as.data.frame(comp)
 # for order model 2, 1, 6, 7, 3, 8, 4, 5, 9
-comp.df$model<-c("all_int","vary_slope", "angler_date","angler_lake",
+# with informed prior for phi: 2,6,1,7,3,8,4,5,9
+comp.df$model<-c("all_int","angler_date","vary_slope", "angler_lake",
                  "angler_only","date_lake","date_only","lake_only","null")
 
 # comp.df$model<-c("all_int","angler_date","angler_lake","angler_only")
@@ -741,228 +777,130 @@ a_d<-ppc_dens_overlay(data.list$lmbCatch, post_angler_date$posterior_pred_check[
 plot_grid(all, a_d, nrow=1)
 ggsave(here("output_selected_model","figures","ppc_all_vs_angler_date.png"), height=4, width=8)
 ```
-
+Moving this to prior.check markdown
 
 The intercept-only (full) model is the best fitting, with a similar fit to the model with varying slopes. 
 
 Compare priors to posteriors
 ```{r}
 
-popDensity.prior<-rlnorm(1000, 0, 2)
-beta.prior<-rlnorm(1000,-1,1)
-phi.prior<-rgamma(1000, 1, 2)
-sigma.q.priors<-rexp(1000, 1)
+#popDensity.prior<-rlnorm(1000, 0, 50)
+#beta.prior<-rlnorm(1000,-1,1)
+#phi.prior<-rgamma(1000, 1, 2)
+#sigma.q.priors<-rexp(1000, 1)
 
-post<-extract(fit_all_int, inc_warmup=FALSE)
+#post<-extract(fit_angler_date, inc_warmup=FALSE)
 
-popDensity.post<-post$popDensity
-beta.post<-post$beta
-phi.post<-post$phi
-sigma.q.a.post<-post$sigma_q_a
-sigma.q.d.post<-post$sigma_q_d
-sigma.q.l.post<-post$sigma_q_l
+#popDensity.post<-post$popDensity
+#beta.post<-post$beta
+#phi.post<-post$phi
+#sigma.q.a.post<-post$sigma_q_a
+#sigma.q.d.post<-post$sigma_q_d
+#sigma.q.l.post<-post$sigma_q_l
 
-popDensity.post.df<-as.data.frame(popDensity.post)
-names(popDensity.post.df)<-paste0("lake_", seq(1:13))
+#popDensity.post.df<-as.data.frame(popDensity.post)
+#names(popDensity.post.df)<-paste0("lake_", seq(1:13))
 
-popDensity.plot<-popDensity.post.df%>%
-  pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
+#popDensity.plot<-popDensity.post.df%>%
+ # pivot_longer(cols=everything(), names_to="lake", values_to="popDensity")
 
-ggplot()+
-  #geom_density(popDensity.prior, fill="gray")+
-  geom_density(aes(x=popDensity.prior), fill="gray")+
-  geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
-  xlim(0,100)+
-  theme_bw()
+#ggplot()+
+  #geom_density(aes(x=popDensity.prior), fill="gray")+
+ # geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), alpha=0.5)+
+  #xlim(0,100)+
+  #theme_bw()
 
-ggsave(here("output_selected_model", "prior_checks", "popDensity_prior_check.png"))
+#ggsave(here("output_selected_model", "prior_checks", "popDensity_prior_check.png"))
 ```
 
-popDensity.prior<-rlnorm(1000, 0, 2)
-beta.prior<-rlnorm(1000,-1,1)
-phi.prior<-rgamma(1000, 1, 2)
-sigma.q.priors<-rexp(1000, 1)
 
-post<-extract(fit_all_int, inc_warmup=FALSE)
-
-popDensity.post<-post$popDensity
-beta.post<-post$beta
-phi.post<-post$phi
-sigma.q.a.post<-post$sigma_q_a
-sigma.q.d.post<-post$sigma_q_d
-sigma.q.l.post<-post$sigma_q_l
 
 ```{r}
-ggplot()+
-  geom_density(aes(x=beta.prior), fill="gray")+
-  geom_density(aes(x=beta.post), fill="lightblue")+
-  ggtitle("beta")+
-  theme_bw()
-  ggsave(here("output_selected_model", "prior_checks", "beta_prior_check.png"))
+# ggplot()+
+#   geom_density(aes(x=beta.prior), fill="gray")+
+#   geom_density(aes(x=beta.post), fill="lightblue")+
+#   ggtitle("beta")+
+#   theme_bw()
+#   ggsave(here("output_selected_model", "prior_checks", "beta_prior_check.png"))
 
 ```
 
 ```{r}
-ggplot()+
-  geom_density(aes(x=phi.prior), fill="gray")+
-  geom_density(aes(x=phi.post), fill="lightblue")+
-  ggtitle("phi")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "phi_prior_check.png"))
+# ggplot()+
+#   geom_density(aes(x=phi.prior), fill="gray")+
+#   geom_density(aes(x=phi.post), fill="lightblue")+
+#   ggtitle("phi")+
+#   theme_bw()
+# ggsave(here("output_selected_model", "prior_checks", "phi_prior_check.png"))
 
 ```
 
 ```{r}
-ggplot()+
-  geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
-  ggtitle("sigma.q.a.yellow.d.green.l.red")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "sigma_prior_check.png"))
+# ggplot()+
+#   geom_density(aes(x=sigma.q.priors), fill="gray")+
+#   geom_density(aes(x=sigma.q.a.post), fill="lightyellow", alpha=0.5)+
+#   geom_density(aes(x=sigma.q.d.post), fill="lightgreen", alpha=0.5)+
+#   geom_density(aes(x=sigma.q.l.post), fill="lightpink", alpha=0.5)+
+#   ggtitle("sigma.q.a.yellow.d.green.l.red")+
+#   theme_bw()
+# ggsave(here("output_selected_model", "prior_checks", "sigma_prior_check.png"))
 
 ```
 The lake random effect may be more affected by the prior dist
 
 ```{r}
-# much wider prior (sigma~exp(0.25))
-fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_wide_sigma.stan"),
-                 data=data.list,
-                 #init=init.phi,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_wide_sigma.rds"))
-
-post.prior.check<-extract(fit_prior_check)
-
-sigma.q.a.post.pc.wide<-post.prior.check$sigma_q_a
-sigma.q.d.post.pc.wide<-post.prior.check$sigma_q_d
-sigma.q.l.post.pc.wide<-post.prior.check$sigma_q_l
-
-
-ggplot()+
-  geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post.pc.wide), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post.pc.wide), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post.pc.wide), fill="lightpink", alpha=0.5)+
-  ggtitle("sigma.q")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "check_sigma_wider_prior.png"))
-
-# much narrower prior (sigma~exp(10))
-fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_narrow_sigma.stan"),
-                 data=data.list,
-                 #init=init.phi,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_narrow_sigma.rds"))
-
-post.prior.check<-extract(fit_prior_check)
-
-sigma.q.a.post.pc.narrow<-post.prior.check$sigma_q_a
-sigma.q.d.post.pc.narrow<-post.prior.check$sigma_q_d
-sigma.q.l.post.pc.narrow<-post.prior.check$sigma_q_l
-
-
-ggplot()+
-  geom_density(aes(x=sigma.q.priors), fill="gray")+
-  geom_density(aes(x=sigma.q.a.post.pc.narrow), fill="lightyellow", alpha=0.5)+
-  geom_density(aes(x=sigma.q.d.post.pc.narrow), fill="lightgreen", alpha=0.5)+
-  geom_density(aes(x=sigma.q.l.post.pc.narrow), fill="lightpink", alpha=0.5)+
-  ggtitle("sigma.q")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "check_sigma_narrow_prior.png"))
-
-
-```
-Beta being the other really important one
-
-```{r}
-ggplot()+
-  geom_density(aes(x=rlnorm(1000, 0, 2)))
-```
-
-
-```{r}
-fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_wide_beta.stan"),
-                 data=data.list,
-                 ##init=init.phi,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_wide_beta.rds"))
-post.prior.check<-extract(fit_prior_check)
-
-beta.post.pc.wide<-post.prior.check$beta
-
-ggplot()+
-  geom_density(aes(x=beta.prior), fill="gray")+
-  geom_density(aes(x=beta.post.pc.wide), fill="lightblue", alpha=0.5)+
-  ggtitle("beta")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "check_beta_wider_prior.png"))
-
-fit_prior_check<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_narrow_beta.stan"),
-                 data=data.list,
-                 ##init=init.phi,
-                 control=list(stepsize=0.1, max_treedepth=15),
-                 chains=4,
-                 warmup=1000,
-                 iter=3000,
-                 cores=4,
-                 refresh=0)
-saveRDS(fit_prior_check, here("output_selected_model","prior_checks","models_prior_checks","fits", "prior_check_all_int_int_narrow_beta.rds"))
-
-post.prior.check<-extract(fit_prior_check)
-
-beta.post.pc.narrow<-post.prior.check$beta
-
-ggplot()+
-  geom_density(aes(x=beta.prior), fill="gray")+
-  geom_density(aes(x=beta.post.pc.narrow), fill="lightblue", alpha=0.5)+
-  ggtitle("beta")+
-  theme_bw()
-ggsave(here("output_selected_model", "prior_checks", "check_beta_narrower_prior.png"))
+fit_selected<-fit_angler_date
 
 
 ```
 
-
-Parameter distributions in the accepted model are very similar to those returned from a model with a much wider prior on that parameter. Narrower priors, of course, have a strong effect, but that's expected. 
-
-
 ```{r}
-fit_selected<-fit_all_int
-
-log_lik_selected<-extract_log_lik(fit_selected, merge_chains=FALSE)
-r_eff_selected<-relative_eff(exp(log_lik_selected))
-
-loo_selected<-loo(log_lik_selected, r_eff=r_eff_selected, cores=4)
-
-print(loo_selected)
-
-```
-
-```{r}
-print(loo_all_int)
-```
-
-```{r}
-mod.summary<-summary(fit_all_int, pars=c("beta","phi","sigma_q_a","sigma_q_d","sigma_q_l",
+mod.summary<-summary(fit_selected, pars=c("beta","phi","sigma_q_a","sigma_q_d",
                                          "log_q_mu", "popDensity"))
 
 mod.summary.comb<-as.data.frame(mod.summary$summary)
-write.csv(mod.summary.comb, here("output_selected_model","tables","fit_all_int_param_summary.csv"))
+write.csv(mod.summary.comb, here("output_selected_model","tables","fit_angler_date_param_summary.csv"))
 ```
+
+
+
+Comparing fit_all_int to fit_angler_date
+
+```{r}
+post_all<-extract(fit_all_int)
+post_a_d<-extract(fit_angler_date)
+
+compare.beta.df<-data.frame(Model=c(rep("Angler, date, and\nlake effects", 8000), rep("Angler and date effects", 8000)),
+                            beta=c(post_all$beta, post_a_d$beta))
+
+
+ggplot(compare.beta.df)+
+  geom_density(aes(x=beta, fill=Model), alpha=0.5)+
+  scale_fill_manual(values=c("lightblue","pink"))+
+  xlab(expression(beta))+
+  ylab(expression(paste("p(", beta, "|catch)")))+
+  theme_bw()+
+    theme(legend.title=element_text(size=16),
+         legend.text=element_text(size=14),
+         axis.title.y=element_text(size=14),
+         axis.title.x=element_text(size=14))
+ggsave(here("output_selected_model","figures","beta.comparison.png"), height=4,width=6)
+```
+When the lake intercept is dropped, the beta posterior is less uncertain, mean shifts a little higher.
+
+```{r}
+
+
+ggplot()+
+  geom_density(aes(x=post_all$sigma_q_a), fill="lightblue", alpha=0.5)+
+  geom_density(aes(x=post_a_d$sigma_q_a), fill="pink", alpha=0.5)+
+  theme_bw()
+```
+```{r}
+ggplot()+
+  geom_density(aes(x=post_all$sigma_q_d), fill="lightblue", alpha=0.5)+
+  geom_density(aes(x=post_a_d$sigma_q_d), fill="pink", alpha=0.5)+
+  theme_bw()
+
+```
+

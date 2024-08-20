@@ -268,18 +268,18 @@ set.seed(392)
    return(init)
  }
 
-# fit_student<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_uninform_beta_10.stan"),
-#                  data=data.list,
-#                  #init=inits,
-#                  control=list(stepsize=0.1, max_treedepth=15),
-#                  chains=4,
-#                  warmup=1000,
-#                  iter=3000,
-#                  cores=4,
-#                  refresh=0)
-# 
-# saveRDS(fit_student, here("output_selected_model","fits","student_t_priors_10.rds"))
-fit_student<-readRDS(here("output_selected_model","fits","student_t_priors_10.rds"))
+ fit_student<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_a_d_uninform_10.stan"),
+                  data=data.list,
+                  init=inits,
+                  control=list(stepsize=0.1, max_treedepth=15),
+                  chains=4,
+                  warmup=1000,
+                  iter=3000,
+                  cores=4,
+                  refresh=0)
+ 
+ saveRDS(fit_student, here("output_selected_model","fits","student_t_priors_10.rds"))
+#fit_student<-readRDS(here("output_selected_model","fits","student_t_priors_10.rds"))
 
 post_student<-extract(fit_student)
 
@@ -334,7 +334,6 @@ beta<-post_student$beta
 phi<-post_student$phi
 sigma_q_a<-(post_student$sigma_q_a)
 sigma_q_d<-(post_student$sigma_q_d)
-sigma_q_l<-(post_student$sigma_q_l)
 
 sigma_e<-post_student$log_resid_sd
 sigma_fixed<-post_student$sigma_fixed
@@ -350,9 +349,8 @@ sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
                            sd=sigma_e)
 
 sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
-                             rep("sigma_q_d", length(sigma_q_d)),
-                             rep("sigma_q_l", length(sigma_q_l))),
-                     sd=c(sigma_q_a, sigma_q_d, sigma_q_l))
+                             rep("sigma_q_d", length(sigma_q_d))),
+                     sd=c(sigma_q_a, sigma_q_d))
 
 popDensity<-as.data.frame(post_student$popDensity)
 
@@ -360,7 +358,6 @@ log_q_mu<-post_student$log_q_mu
 
 log_q_a<-as.data.frame(post_student$log_q_a)
 log_q_d<-as.data.frame(post_student$log_q_d)
-log_q_l<-as.data.frame(post_student$log_q_l)
 
 names_a<-paste0("angler_", seq(1:18))
 names_d<-as.character(unique(data.indexed$date))
@@ -368,7 +365,7 @@ names_l<-paste0("lake_", seq(1:13))
 
 names(log_q_a)<-names_a
 names(log_q_d)<-names_d
-names(log_q_l)<-names_l
+#names(log_q_l)<-names_l
 
 
 # log.q.df<-data.frame(param=c(rep("log_q_mu", length(log_q_mu)),
@@ -386,9 +383,6 @@ date_long<-log_q_d%>%
   pivot_longer(cols=everything(), names_to="date", values_to="date_effect")%>%
   mutate(date=as.factor(as.numeric(date)))
   
-lake_long<-log_q_l%>%
-  pivot_longer(cols=everything(), names_to="lake", values_to="lake_effect")%>%
-  mutate(lake=factor(lake, levels=c("lake_1","lake_2","lake_3","lake_4","lake_5","lake_6","lake_7","lake_8","lake_9","lake_10","lake_11","lake_12","lake_13")))
 
 
 ```
@@ -403,107 +397,24 @@ futurama<-pal_futurama("planetexpress")(12)
 simpsons<-pal_simpsons("springfield")(12)
 
 ```
-sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e)),
-                                   sd=sigma_e))
-
 
 ```{r}
 
 beta.df<-data.frame(param=rep("beta"), estimate=beta)
-
-
-# sigma.total.plot<-ggplot(sigma.total.df)+
-#   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[2], name="", labels=expression(sigma["total"]))+
-#   xlim(0,7)+
-#   xlab(expression(sigma["total"]))+
-#   ylab(expression(paste("p(", sigma["total"], "|catch)")))+
-#   theme_bw()+
-#   theme(legend.text=element_text(size=16),
-#         axis.title.y=element_text(size=14),
-#         axis.title.x=element_blank())
-# 
-# 
-# sigma.e.plot<-ggplot(sigma.error.df)+
-#   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[5], name="", labels=expression(sigma[epsilon]))+
-#   xlim(0,7)+
-#   xlab(expression(sigma[epsilon]))+
-#   ylab(expression(paste("p(", sigma[epsilon], "|catch)")))+
-#   theme_bw()+
-#   theme(legend.text=element_text(size=16),
-#         axis.title.y=element_text(size=14),
-#         axis.title.x=element_blank())
-# sigma.e.plot
-
-# sigma.fixed.plot<-ggplot(sigma.fixed.df)+
-#   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[6], name="", labels=expression(sigma[beta]))+
-#   xlim(0,7)+
-#   xlab(expression(sigma[beta]))+
-#   ylab(expression(paste("p(", sigma[beta], "|catch)")))+
-#   theme_bw()+
-#   theme(legend.text=element_text(size=16),
-#         axis.title.y=element_text(size=14),
-#         axis.title.x=element_blank())
-
-# beta.plot<-ggplot(beta.df)+
-#   geom_density(aes(x=estimate, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[2], name="", labels=expression(beta))+
-#   xlim(0,7)+
-#   xlab(expression(beta))+
-#   ylab(expression(paste("p(", beta, "|catch)")))+
-#   theme_bw()
-# beta.plot
-
-# sigma.random.plot<-ggplot(sigma.df)+
-#   geom_density(aes(x=sd, fill=param), alpha=0.7)+
-#   scale_fill_manual(values=futurama[c(1,4,3)], name="", labels=expression(sigma[a], sigma[d], sigma[l]))+
-#   xlim(0,7)+
-#   ylab(expression(paste("p(", sigma["a,d,l"], "|catch)")))+
-#   xlab(expression(sigma))+
-#   theme_bw()+
-#   theme(legend.text=element_text(size=16),
-#         axis.title.y=element_text(size=14),
-#         axis.title.x=element_text(size=16))
-# sigma.random.plot
-# 
-# plot_grid(sigma.random.plot, sigma.fixed.plot, sigma.e.plot, sigma.total.plot, ncol=1, align="v")
-# #plot_grid(sigma.total.plot, sigma.e.plot, sigma.fixed.plot, sigma.random.plot, ncol=1, align="v")
-# ggsave(here("output_selected_model","prior_checks","prior_checks_student","beta.sigma.posterior.student.10.png"), height=8, width=6)
-# 
-
-```
-```{r}
-# icc.df<-data.frame(group=c(rep("Angler effect", 8000), rep("Date effect", 8000), rep("Lake effect", 8000)),
-#                      ICC=c(post_student$ICC_a, post_student$ICC_d, post_student$ICC_l))
-# 
-# ggplot(icc.df)+
-#   geom_density(aes(x=ICC, fill=group), alpha=0.7)+
-#   scale_fill_manual(values=futurama[c(1,4,3)], name="")+
-#   ylab(expression(paste("p(", ICC["a,d,l"], "|catch)")))+
-#   xlab("Intraclass Correlation Coefficient")+
-#   theme_bw()+
-#     theme(legend.text=element_text(size=10),
-#         axis.title.y=element_text(size=12),
-#         axis.title.x=element_text(size=12))
-# ggsave(here::here("output_selected_model","prior_checks","prior_checks_student","ICC_density_student_10.png"), height=4, width=6)
-
-
 ```
 
 Compare priors to posteriors
-For first round, set scale parameter of student t to 1. (popDensity was 50) (Note: first round I didnt' change sigma prior; I need to go back and do this)
-On next round, set parameter to 10. these are saved with _10 at tthe end. I changed the popDensity scale prior from 50 to 100
+For first round, set scale parameter of student t to 1. (popDensity was 50) 
+On next round, set parameter to 10. these are saved with _10 at tthe end. I changed the popDensity scale prior from 50 to 100 and phi gamma to 1, 0.1 (from 1, 0.5)
 ```{r}
-popDensity.prior<-post_student$prior_t_popDensity[post_student$prior_t_popDensity>=0]
-half.t.prior<-post_student$prior_t_other[post_student$prior_t_other>=0]
-phi.prior<-post_student$prior_phi
-prior.sigma<-post_student$prior_sigma
+popDensity.prior.10<-post_student$prior_t_popDensity[post_student$prior_t_popDensity>=0]
+half.t.prior.10<-post_student$prior_t_other[post_student$prior_t_other>=0]
+phi.prior.10<-post_student$prior_phi
+prior.sigmas.10<-post_student$prior_sigma
 
-beta.prior<-half.t.prior
-phi.prior<-phi.prior
-sigma.q.priors<-half.t.prior
+beta.prior.10<-half.t.prior.10
+phi.prior.10<-phi.prior.10
+sigma.q.priors.10<-half.t.prior.10
 
 post<-post_student
 
@@ -522,56 +433,58 @@ popDensity.plot<-popDensity.post.df%>%
   mutate(lake=factor(lake, levels=c("lake_1","lake_2","lake_3","lake_4","lake_5","lake_6","lake_7","lake_8","lake_9","lake_10",
                                     "lake_11","lake_12","lake_13")))
 
-ggplot()+
+popDensity.100<-ggplot()+
   geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake),bounds=c(0, Inf), alpha=0.5)+
-    geom_density(aes(x=popDensity.prior),bounds=c(0, Inf), fill="gray", alpha=0.7)+
+    geom_density(aes(x=popDensity.prior.10),bounds=c(0, Inf), fill="gray", alpha=0.7)+
   xlim(0,200)+
   xlab("Population density (1/ha)")+
-   ylab(expression(paste("p(", "Population density", "|Catch)")))+
+   ylab(expression(paste("Probability density p(", "Population density", "|Catch)")))+
   theme_bw()
-
+popDensity.100
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","popDensity_prior_check_100.png"))
 ```
 
 
 ```{r}
-ggplot()+
-  geom_density(aes(x=beta.prior), bounds=c(0, Inf),fill="gray")+
+beta.10<-ggplot()+
+  geom_density(aes(x=beta.prior.10), bounds=c(0, Inf),fill="gray")+
   geom_density(aes(x=beta.post), bounds=c(0, Inf), fill="lightblue")+
   xlab(expression(beta))+
-   ylab(expression(paste("p(", beta, "|Catch)")))+
+   ylab(expression(paste("Probability density p(", beta, "|Catch)")))+
 
   xlim(0,10)+
   theme_bw()
+beta.10
   ggsave(here("output_selected_model", "prior_checks", "prior_checks_student", "beta_prior_check_10.png"))
 
 ```
 
 ```{r}
-ggplot()+
-  geom_density(aes(x=phi.prior), bounds=c(0, Inf), fill="gray")+
+phi.10<-ggplot()+
+  geom_density(aes(x=phi.prior.10), bounds=c(0, Inf), fill="gray")+
   geom_density(aes(x=phi.post),bounds=c(0, Inf), fill="lightblue")+
-  ylab(expression(paste("p(", phi, "|Catch)")))+
+  ylab(expression(paste("Probability density p(", phi, "|Catch)")))+
   xlab(expression(phi))+
   xlim(0,55)+
   theme_bw()
+phi.10
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","phi_prior_check_10.png"))
 
 ```
 Phi is pretty sensitive to prior 
 
 ```{r}
-sigma.check<-data.frame(group=c(rep("prior", 4033), rep("angler", 8000), rep("date", 8000), rep("lake", 8000)),
-                        sigma.q=c(sigma.q.priors, sigma.q.a.post, sigma.q.d.post, sigma.q.l.post))
+sigma.check.10<-data.frame(group=c(rep("prior", length(sigma.q.priors.10)), rep("angler", 8000), rep("date", 8000)),
+                        sigma.q=c(sigma.q.priors.10, sigma.q.a.post, sigma.q.d.post))
 
-ggplot(sigma.check)+
-  geom_density(aes(x=sigma.check$sigma.q, fill=group),bounds=c(0, Inf), alpha=0.5)+
-  scale_fill_manual("Effect",values=c("lightpink","lightyellow","lightgreen","gray"))+
+sigma.10<-ggplot(sigma.check.10)+
+  geom_density(aes(x=sigma.check.10$sigma.q, fill=group),bounds=c(0, Inf), alpha=0.5)+
+  scale_fill_manual("Effect",values=c("lightpink","lightyellow","gray"))+
   xlim(0,10)+
-   ylab(expression(paste("p(", sigma["q"], "|Catch)")))+
+   ylab(expression(paste("Probability density p(", sigma["q"], "|Catch)")))+
   xlab(expression(sigma["q"]))+
   theme_bw()
-
+sigma.10
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","sigma_prior_check_10.png"))
 
 ```
@@ -580,18 +493,18 @@ Everything except phi is very similar with a wide, very vague prior. Exception: 
 
 ```{r}
 set.seed(482)
-# fit_student_1<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_all_int_uninform_beta_1.stan"),
-#                  data=data.list,
-#                  #init=inits,
-#                  control=list(stepsize=0.1, max_treedepth=15),
-#                  chains=4,
-#                  warmup=1000,
-#                  iter=3000,
-#                  cores=4,
-#                  refresh=0)
-# 
-# saveRDS(fit_student_1, here("output_selected_model","fits","student_t_priors_1.rds"))
-fit_student_1<-readRDS(here("output_selected_model","fits","student_t_priors_1.rds"))
+fit_student_1<-stan(file=here("output_selected_model","prior_checks","models_prior_checks","prior_check_a_d_uninform_1.stan"),
+                  data=data.list,
+                  init=inits,
+                  control=list(stepsize=0.1, max_treedepth=15),
+                  chains=4,
+                  warmup=1000,
+                  iter=3000,
+                  cores=4,
+                  refresh=0)
+ 
+ saveRDS(fit_student_1, here("output_selected_model","fits","student_t_priors_1.rds"))
+#fit_student_1<-readRDS(here("output_selected_model","fits","student_t_priors_1.rds"))
 
 post_student_1<-extract(fit_student_1)
 
@@ -606,7 +519,6 @@ beta<-post_student_1$beta
 phi<-post_student_1$phi
 sigma_q_a<-(post_student_1$sigma_q_a)
 sigma_q_d<-(post_student_1$sigma_q_d)
-sigma_q_l<-(post_student_1$sigma_q_l)
 
 sigma_e<-post_student_1$log_resid_sd
 sigma_fixed<-post_student_1$sigma_fixed
@@ -623,8 +535,7 @@ sigma.error.df<-data.frame(param=c(rep("sigma_error", length(sigma_e))),
 
 sigma.df<-data.frame(param=c(rep("sigma_q_a", length(sigma_q_a)),
                              rep("sigma_q_d", length(sigma_q_d)),
-                             rep("sigma_q_l", length(sigma_q_l))),
-                     sd=c(sigma_q_a, sigma_q_d, sigma_q_l))
+                     sd=c(sigma_q_a, sigma_q_d)))
 
 popDensity<-as.data.frame(post_student_1$popDensity)
 
@@ -632,7 +543,6 @@ log_q_mu<-post_student_1$log_q_mu
 
 log_q_a<-as.data.frame(post_student_1$log_q_a)
 log_q_d<-as.data.frame(post_student_1$log_q_d)
-log_q_l<-as.data.frame(post_student_1$log_q_l)
 
 names_a<-paste0("angler_", seq(1:18))
 names_d<-as.character(unique(data.indexed$date))
@@ -640,7 +550,6 @@ names_l<-paste0("lake_", seq(1:13))
 
 names(log_q_a)<-names_a
 names(log_q_d)<-names_d
-names(log_q_l)<-names_l
 
 
 # log.q.df<-data.frame(param=c(rep("log_q_mu", length(log_q_mu)),
@@ -658,9 +567,6 @@ date_long<-log_q_d%>%
   pivot_longer(cols=everything(), names_to="date", values_to="date_effect")%>%
   mutate(date=as.factor(as.numeric(date)))
   
-lake_long<-log_q_l%>%
-  pivot_longer(cols=everything(), names_to="lake", values_to="lake_effect")%>%
-  mutate(lake=factor(lake, levels=c("lake_1","lake_2","lake_3","lake_4","lake_5","lake_6","lake_7","lake_8","lake_9","lake_10","lake_11","lake_12","lake_13")))
 
 
 ```
@@ -686,7 +592,6 @@ beta.post<-post$beta
 phi.post<-post$phi
 sigma.q.a.post<-post$sigma_q_a
 sigma.q.d.post<-post$sigma_q_d
-sigma.q.l.post<-post$sigma_q_l
 
 popDensity.post.df<-as.data.frame(popDensity.post)
 names(popDensity.post.df)<-paste0("lake_", seq(1:13))
@@ -696,58 +601,70 @@ popDensity.plot<-popDensity.post.df%>%
   mutate(lake=factor(lake, levels=c("lake_1","lake_2","lake_3","lake_4","lake_5","lake_6","lake_7","lake_8","lake_9","lake_10",
                                     "lake_11","lake_12","lake_13")))
 
-ggplot()+
+popDensity.50<-ggplot()+
   geom_density(data=popDensity.plot, aes(x=popDensity, fill=lake), bounds=c(0, Inf), alpha=0.5)+
     geom_density(aes(x=popDensity.prior), bounds=c(0, Inf), fill="gray", alpha=0.7)+
   xlim(0,200)+
   xlab("Population density (1/ha)")+
-   ylab(expression(paste("p(", "Population density", "|Catch)")))+
+   ylab(expression(paste("Probability density p(", "Population density", "|Catch)")))+
   theme_bw()
-
+popDensity.50
 
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","popDensity_prior_check_50.png"))
 ```
 
 
 ```{r}
-ggplot()+
+beta.1<-ggplot()+
   geom_density(aes(x=beta.prior), bounds=c(0, Inf),fill="gray")+
   geom_density(aes(x=beta.post), bounds=c(0, Inf), fill="lightblue")+
   xlab(expression(beta))+
-   ylab(expression(paste("p(", beta, "|Catch)")))+
+   ylab(expression(paste("Probability density p(", beta, "|Catch)")))+
 
   xlim(0,10)+
   theme_bw()
+beta.1
   ggsave(here("output_selected_model", "prior_checks", "prior_checks_student", "beta_prior_check_1.png"))
 
 ```
 
 ```{r}
-ggplot()+
+phi.1<-ggplot()+
   geom_density(aes(x=phi.prior), bounds=c(0, Inf),fill="gray")+
   geom_density(aes(x=phi.post),bounds=c(0, Inf),  fill="lightblue")+
-  ylab(expression(paste("p(", phi, "|Catch)")))+
+  ylab(expression(paste("Probability density p(", phi, "|Catch)")))+
   xlab(expression(phi))+
   xlim(0,55)+
   theme_bw()
+phi.1
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","phi_prior_check_1.png"))
 
 ```
 
 ```{r}
 
-sigma.check<-data.frame(group=c(rep("prior", 3997), rep("angler", 8000), rep("date", 8000), rep("lake", 8000)),
-                        sigma.q=c(sigma.q.priors, sigma.q.a.post, sigma.q.d.post, sigma.q.l.post))
+sigma.check<-data.frame(group=c(rep("prior", length(sigma.q.priors)), rep("angler", 8000), rep("date", 8000)),
+                        sigma.q=c(sigma.q.priors, sigma.q.a.post, sigma.q.d.post))
 
-ggplot(sigma.check)+
+sigma.1<-ggplot(sigma.check)+
   geom_density(aes(x=sigma.check$sigma.q, fill=group), bounds=c(0, Inf), alpha=0.5)+
-  scale_fill_manual("Effect",values=c("lightpink","lightyellow","lightgreen","gray"))+
+  scale_fill_manual("Effect",values=c("lightpink","lightyellow","gray"))+
   xlim(0,10)+
-   ylab(expression(paste("p(", sigma["q"], "|Catch)")))+
+   ylab(expression(paste("Probability density p(", sigma["q"], "|Catch)")))+
   xlab(expression(sigma["q"]))+
   theme_bw()
-
+sigma.1
 
 ggsave(here("output_selected_model", "prior_checks", "prior_checks_student","sigma_prior_check_1.png"))
 
 ```
+comparison plots
+
+```{r}
+library(cowplot)
+
+plot_grid(popDensity.50, popDensity.100, rel_widths=c(1, 1.3), labels=c("A","B"))
+ggsave(here("output_selected_model","prior_checks","prior_checks_student", "popDensity.compare.png"), height=4, width=8)
+
+```
+

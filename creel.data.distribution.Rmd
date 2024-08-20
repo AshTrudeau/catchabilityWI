@@ -1,0 +1,99 @@
+---
+title: "informative phi"
+output: html_document
+date: "2024-08-20"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+pacman::p_load(wdnr.fmdb, tidyverse, lubridate, MASS)
+```
+
+```{r}
+rm(list=ls())
+
+```
+
+
+```{r}
+creel.lmb<-get_creel_fish_data(county="vilas", spp="largemouth_bass")
+
+  # making creel data more comparable by including only trips where 100% of time was for bass, trip length was <4 hours
+creel.catch<-creel.lmb%>%
+  filter(fished.perc==100)%>%
+  mutate(angler.catch=caught/anglers,
+         date_start_time=ymd_hm(paste(sample.date, start.time)),
+         date_end_time=ymd_hm(paste(sample.date, end.time)),
+         hours_nofish=as.numeric(str_sub(not.fishing.amt, start=1, end=2)),
+         minutes_nofish=as.numeric(str_sub(not.fishing.amt, start=3, end=4)),
+         minutes_nofish=ifelse(is.na(minutes_nofish), 0, minutes_nofish),
+         minutes_nofish=minutes_nofish+hours_nofish*60,
+         tripLengthMinutes=as.numeric(date_end_time-date_start_time-minutes_nofish),
+         tripLengthHours=tripLengthMinutes/60)%>%
+  filter(tripLengthHours<4 &
+           month(ymd(sample.date))%in%c(6,7,8))%>%
+  # filter to integers
+  filter(round(angler.catch)==angler.catch & tripLengthHours>0)
+
+```
+
+fit a negative binomial distribution (nb 2) to catch data
+verified it's the right type of NB (mu and theta)
+
+```{r}
+fit.nb<-fitdistr(creel.catch$angler.catch, "Negative Binomial")
+summary(fit.nb)
+
+mu<-fit.nb$estimate[2]
+theta<-fit.nb$estimate[1]
+
+mu
+theta
+
+```
+
+
+```{r}
+mean(creel.catch$angler.catch)
+
+variance(creel.catch$angler.catch)
+
+mu+(mu^2/theta)
+```
+in independent set of creel data, theta (phi) of negative binomial distribution was 0.2105 (dispersion ~ 5)
+
+Let's be consistent and do it with stan
+
+```{r}
+data.list<-list(
+  lmbCatch=creel.catch$angler.catch,
+  log_effort=log(creel.catch$tripLengthHours),
+  N=length(creel.catch$angler.catch)
+)
+
+init.nb<-function(){
+b1<-rnorm(1,0,0.5)
+phi<-rgamma(1,0,0.5)
+b0<-rnorm(1,0,0.5)
+
+inits<-list(
+  b1=b1,
+  b0=b0,
+  phi=phi
+)
+return(inits)
+}
+
+fit_nb<-stan(file="inform.prior.phi.creel.stan",
+                 data=data.list,
+                 init=init.nb,
+                 control=list(stepsize=0.1, max_treedepth=15),
+                 chains=1,
+                 warmup=1000,
+                 iter=3000,
+                 cores=1,
+                 refresh=0)
+
+
+```
+

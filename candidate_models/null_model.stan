@@ -54,8 +54,8 @@ model {
 
   lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
-
-  phi ~ gamma(1,0.5);
+  b1 ~ student_t(3,0,1);
+  phi ~ gamma(1,5);
 
 }
 

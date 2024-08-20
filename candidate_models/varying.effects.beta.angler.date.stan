@@ -52,10 +52,8 @@ parameters {
   cholesky_factor_corr[2] A_corr;    // Cholesky factor of correlation matrix
   
   real mu_date;                     // global mean date
-  real mu_lake;                     // global mean lake
-  
+
   real<lower=0> sigma_date;          // sd among dates and lakes around global mean
-  real<lower=0> sigma_lake;
 
   real<lower=0> phi;                 ////likelihood/population deviance
   
@@ -63,7 +61,6 @@ parameters {
   vector<lower=0>[L] PE;
   
   vector[D] date_z_raw;
-  vector[L] lake_z_raw;
 
 }
 
@@ -84,8 +81,7 @@ transformed parameters{
   matrix[A, 2] angler_effect;       // angler specific intercepts and slopes
   
   vector[D] date_effect;
-  vector[L] lake_effect;
-  
+
   
   z_angler = diag_pre_multiply(sigma_angler, A_corr) * angler_z_raw; 
   
@@ -97,10 +93,7 @@ transformed parameters{
   for(d in 1:D){
     date_effect = mu_date + sigma_date * date_z_raw;
   }
-  for(l in 1:L){
-    lake_effect = mu_lake + sigma_lake * lake_z_raw;
-  }
-  
+
 
 
 }
@@ -125,8 +118,7 @@ model {
   A_corr ~ lkj_corr_cholesky(2);
   to_vector(angler_z_raw) ~ normal(0,1);
   date_z_raw ~ normal(0,1);
-  lake_z_raw ~ normal(0,1);
-  
+
   //angler_global ~ normal(0,1);
   angler_global ~ student_t(3,0,1);
   //sigma_angler ~ exponential(1);
@@ -135,19 +127,17 @@ model {
   //mu_date ~ normal(0,1);
   //mu_lake ~ normal(0,1);
   mu_date ~ student_t(3,0,1);
-  mu_lake~student_t(3,0,1);
-  
+
   //sigma_date ~ exponential(1);
   //sigma_lake ~ exponential(1);
   sigma_date~student_t(3,0,1);
-  sigma_lake~student_t(3,0,1);
-  
+
   //phi ~ gamma(1,2);
-  phi~gamma(1,5);
+  phi~gamma(1,0.5);
   
   
   for(i in 1:N){
-    logCatchHat[i] = log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]];
+    logCatchHat[i] = log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] +  angler_effect[AA[i],2] * log_popDensity_sc[LL[i]];
   }
   
   // likelihood
@@ -165,11 +155,11 @@ generated quantities{
   omega = multiply_lower_tri_self_transpose(A_corr);
   
     for(i in 1:N){
-    catch_pred[i]=neg_binomial_2_log_rng(log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]],phi);
+    catch_pred[i]=neg_binomial_2_log_rng(log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] +  angler_effect[AA[i],2] * log_popDensity_sc[LL[i]],phi);
   }
   
   for(i in 1:N){
-    log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i] | log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] + lake_effect[LL[i]] + angler_effect[AA[i],2] * log_popDensity_sc[LL[i]], phi);
+    log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i] | log_effort[i] + angler_effect[AA[i],1] + date_effect[DD[i]] +  angler_effect[AA[i],2] * log_popDensity_sc[LL[i]], phi);
   }
 
 

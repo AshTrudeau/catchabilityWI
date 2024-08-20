@@ -152,7 +152,7 @@ model {
   log_q_mu ~ student_t(3,0,1);
   
   //phi ~ gamma(1,2);
-  phi ~ gamma(1, 0.5);
+  phi ~ gamma(1, 5);
   //beta ~ lognormal(-1, 1);
   beta ~ student_t(3,0,1);
 

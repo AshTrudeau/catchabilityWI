@@ -112,7 +112,7 @@ model {
   target += student_t_lpdf(sigma_q_d | 3,0,1);
 
   //target += gamma_lpdf(phi| 1,2);
-  target += gamma_lpdf(phi| 1,0.5);
+  target += gamma_lpdf(phi| 1,5);
 
   //target += lognormal_lpdf(beta | -1,1);
   target += student_t_lpdf(beta | 3,0,1);
