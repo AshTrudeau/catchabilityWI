@@ -169,46 +169,59 @@ generated quantities{
   
   //vector[N] log_lik;
   array[N] int posterior_pred_check;
-  array[N] int posterior_pred_random;
+  array[N] int posterior_pred_angler;
+  array[N] int posterior_pred_date;
   array[N] int posterior_pred_fixed;
+  array[N] int posterior_pred_nb_only;
   array[N] real link_predictions;
   // model expectation for converting phi of catch NB distribution to sigma
-  real prediction_b0;
-  real lambda;
-  real sigma_2_random;
-  real sigma_random;
+  // real prediction_b0;
+  // real lambda;
+  // real sigma_2_random;
+  // real sigma_random;
   
   // for sd of fixed effects only
-  vector[N] predict_fixed;
-  vector[N] predict_random;
-  real sigma_2_fixed;
-  real sigma_2_pred;
-  real sigma_2_link_pred;
-  real sigma_2_total;
-  real sigma_2_resid;
-  real sigma_fixed;
-  real sigma_pred;
-  real sigma_link_pred;
-  real sigma_total;
-  real sigma_resid;
+ // vector[N] predict_fixed;
+  //vector[N] predict_random;
+  // real sigma_2_fixed;
+  // real sigma_2_pred;
+  // real sigma_2_link_pred;
+  // real sigma_2_total;
+  // real sigma_2_resid;
+  // real sigma_fixed;
+  // real sigma_pred;
+  // real sigma_link_pred;
+  // real sigma_total;
+  // real sigma_resid;
   
-  real sigma_post_random;
+  real sigma_post_angler;
+  real sigma_post_date;
   real sigma_post_fixed;
+  real sigma_post_nb_only;
+  real sigma_post_full;
   
-  real sigma_2_post_random;
+  real sigma_2_post_angler;
+  real sigma_2_post_date;
   real sigma_2_post_fixed;
+  real sigma_2_post_nb_only;
+  real sigma_2_post_full;
   
-  real prop_var_explained_pred;
-  real prop_angler_vs_fixed_pred;
-  real prop_date_vs_fixed_pred;
+  real prop_var_angler;
+  real prop_var_date;
+  real prop_var_popDensity;
+  real prop_var_nb;
+  
+  // real prop_var_explained_pred;
+  // real prop_angler_vs_fixed_pred;
+  // real prop_date_vs_fixed_pred;
 
-  real prop_fixed_vs_pred;
-  real prop_angler_vs_pred;
-  real prop_date_vs_pred;
+  // real prop_fixed_vs_pred;
+  // real prop_angler_vs_pred;
+  // real prop_date_vs_pred;
 
 
-  real r2_marginal;
-  real r2_conditional;
+ // real r2_marginal;
+//  real r2_conditional;
   
  //real ICC_a;
  //real ICC_d;
@@ -260,23 +273,23 @@ generated quantities{
   // forget it. Instead of r2 values, I'm going to simplify and show graphically the variance in random effects, fixed effect predictions, and predicted total variance (with vertical line for data variance)
   
   // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
-  prediction_b0 = mean(log_effort) + log_q_mu;
+//  prediction_b0 = mean(log_effort) + log_q_mu;
   
   // does Nakagawa et al 2017 have a typo? it describes sigma tau as the total variance on the latent scale, but then only gives 
   // sigma squared of the random effect? 
   // no  i checked supplement example, it's just the random effects
- lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2+sigma_q_d^2));
+// lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2+sigma_q_d^2));
   
-  sigma_2_resid = trigamma(((1/lambda)+(1/phi))^(-1));
+//  sigma_2_resid = trigamma(((1/lambda)+(1/phi))^(-1));
 
 // I bet the problem is that predict_fixed isn't accounting for the uncertainty in the log_popDensity estimates.
-  for(i in 1:N){
-  predict_fixed[i] = log_effort[i] + log_q_mu + log_mu_q_a + log_mu_q_d  + beta * log_popDensity_sc[LL[i]];
-  }
+//  for(i in 1:N){
+//  predict_fixed[i] = log_effort[i] + log_q_mu + log_mu_q_a + log_mu_q_d  + beta * log_popDensity_sc[LL[i]];
+//  }
   
-    for(i in 1:N){
-  predict_random[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]];
-  }
+//    for(i in 1:N){
+//  predict_random[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]];
+//  }
 
   
     // posterior predictive checks, removed after completion to reduce run time
@@ -285,10 +298,19 @@ generated quantities{
    }
    
    for(n in 1:N){
-   posterior_pred_random[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] ,phi);
+   posterior_pred_angler[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_mu_q_d + log_q_a[AA[n]] ,phi);
    }
+   
+      for(n in 1:N){
+   posterior_pred_date[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_mu_q_a +log_q_d[DD[n]] ,phi);
+   }
+
    for(n in 1:N){
    posterior_pred_fixed[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_mu_q_a + log_mu_q_d +  beta * log_popDensity_sc[LL[n]],phi);
+   }
+   
+   for(n in 1:N){
+     posterior_pred_nb_only[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_mu_q_a + log_mu_q_d, phi);
    }
    
    for(n in 1:N){
@@ -296,48 +318,60 @@ generated quantities{
    }
 
 
-  sigma_2_fixed = variance(predict_fixed);
-  sigma_2_random = variance(predict_random);
-  sigma_2_pred = variance(posterior_pred_check);
-  sigma_pred = sqrt(sigma_2_pred);
+//  sigma_2_fixed = variance(predict_fixed);
+//  sigma_2_random = variance(predict_random);
+//  sigma_2_pred = variance(posterior_pred_check);
+//  sigma_pred = sqrt(sigma_2_pred);
   
-  sigma_2_link_pred = variance(link_predictions);
-  sigma_link_pred = sqrt(sigma_2_link_pred);
+//  sigma_2_link_pred = variance(link_predictions);
+//  sigma_link_pred = sqrt(sigma_2_link_pred);
   
-  sigma_fixed = sqrt(sigma_2_fixed);
-  sigma_random = sqrt(sigma_2_random);
-  sigma_pred = sqrt(sigma_2_pred);
+//  sigma_fixed = sqrt(sigma_2_fixed);
+//  sigma_angler = sqrt(sigma_2_angler);
+//  sigma_date = sqrt(sigma_2_date);
+//  sigma_pred = sqrt(sigma_2_pred);
   
-  sigma_2_random = sigma_q_a^2+sigma_q_d^2;
-  sigma_random=sqrt(sigma_2_random);
+//  sigma_2_random = sigma_q_a^2+sigma_q_d^2;
+//  sigma_random=sqrt(sigma_2_random);
   
-  sigma_2_total=sigma_2_fixed+sigma_2_random+sigma_2_resid;
+//  sigma_2_total=sigma_2_fixed+sigma_2_random+sigma_2_resid;
   
   sigma_2_post_fixed = variance(posterior_pred_fixed);
-  sigma_2_post_random = variance(posterior_pred_random);
+  sigma_2_post_angler = variance(posterior_pred_angler);
+  sigma_2_post_date = variance(posterior_pred_date);
+  sigma_2_post_nb_only = variance(posterior_pred_nb_only);
+  sigma_2_post_full = variance(posterior_pred_check);
   
   sigma_post_fixed =sqrt(sigma_2_post_fixed);
-  sigma_post_random = sqrt(sigma_2_post_random);
+  sigma_post_angler= sqrt(sigma_2_post_angler);
+  sigma_post_date= sqrt(sigma_2_post_date);
+  sigma_post_nb_only= sqrt(sigma_2_post_nb_only);
+  sigma_post_full = sqrt(sigma_2_post_full);
+  
+  prop_var_angler = (sigma_2_post_angler-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_popDensity =(sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_nb = (sigma_2_post_nb_only)/sigma_2_post_full;
   
   
-  r2_marginal = sigma_2_fixed/sigma_2_total;
-  r2_conditional = (sigma_2_fixed+sigma_2_random)/sigma_2_total;
+  //r2_marginal = sigma_2_fixed/sigma_2_total;
+  //r2_conditional = (sigma_2_fixed+sigma_2_random)/sigma_2_total;
   
   //ICC_a = (sigma_q_a)^2/sigma_2_total;
   //ICC_d = (sigma_q_d)^2/sigma_2_total;
  // ICC_l = (sigma_q_l)^2/sigma_2_total;
   
-  prop_var_explained_pred = (sigma_2_random + sigma_2_fixed)/sigma_2_pred;
-  prop_angler_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
-  prop_date_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
+ // prop_var_explained_pred = (sigma_2_random + sigma_2_fixed)/sigma_2_pred;
+//  prop_angler_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
+//  prop_date_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
 
-  prop_fixed_vs_pred = sigma_2_fixed/sigma_2_pred;
-  prop_angler_vs_pred = sigma_q_a^2/sigma_2_pred;
-  prop_date_vs_pred = sigma_q_d^2/sigma_2_pred;
+//  prop_fixed_vs_pred = sigma_2_fixed/sigma_2_pred;
+//  prop_angler_vs_pred = sigma_q_a^2/sigma_2_pred;
+//  prop_date_vs_pred = sigma_q_d^2/sigma_2_pred;
 
-  sigma_total = sqrt(sigma_2_total);
-  sigma_fixed = sqrt(sigma_2_fixed);
-  sigma_resid = sqrt(sigma_2_resid);
+//  sigma_total = sqrt(sigma_2_total);
+//  sigma_fixed = sqrt(sigma_2_fixed);
+//  sigma_resid = sqrt(sigma_2_resid);
   
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d +  beta*mean(log_popDensity_sc), phi);
