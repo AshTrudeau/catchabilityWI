@@ -264,6 +264,9 @@ generated quantities{
   array[84] int predict_best_worst;
   
   array[84] int predict_medium;
+  
+
+
 
 
   prior_t_popDensity =student_t_rng(3, 0, 50);
@@ -352,7 +355,7 @@ generated quantities{
   prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
   prop_var_popDensity =(sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
   prop_var_nb = (sigma_2_post_nb_only)/sigma_2_post_full;
-  
+ 
   
   //r2_marginal = sigma_2_fixed/sigma_2_total;
   //r2_conditional = (sigma_2_fixed+sigma_2_random)/sigma_2_total;
@@ -458,6 +461,46 @@ generated quantities{
     predict_medium[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + medium_angler[i] + medium_date[i] + beta*log_popDensity_sc_best_worst[i],phi);
   }
 
+  // alternatively, I may have found the issue I was having with catchHatStar
+  // yeah no that still doesn't work. 
+  
+//  for(i in 1:100){
+//    sim_log_q_a[i] = normal_rng(log_mu_q_a, sigma_q_a);
+//    sim_log_q_d[i] = normal_rng(log_mu_q_d, sigma_q_d);
+//  }
+  
+  // scaled mean log pop density is zero, so leave it out if I'm simulating at mean log population density
+//  for(i in 1:100){
+//    catchHatStar_all[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + beta*log_popDensity_sc[5], phi);
+//    catchHatStar_a[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + sim_log_q_a[i] + log_mu_q_d + beta*log_popDensity_sc[5], phi);
+//    catchHatStar_d[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + sim_log_q_d[i] + beta*log_popDensity_sc[5], phi);
+//  }
+  
+//  for(i in 1:L){
+//    catchHatStar_popDensity[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + beta*log_popDensity_sc[i], phi);
+//  }
+
+  // level 1 variance
+  // log parameterization, so lambda (mean) is logged, have to exponentiate
+//  for(i in 1:100){
+//    lambda_catchHatStar_all[i] = exp(mean(log_effort) + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + beta*log_popDensity_sc[5]);
+//  }
+  
+//  for(i in 1:100){
+//  var_catchHatStar_all[i] = lambda_catchHatStar_all[i] + ((lambda_catchHatStar_all[i]^2)/phi);
+//  }
+  
+  // level 2 variance
+//  var2_catchHatStar_a = variance(catchHatStar_a);
+//  var2_catchHatStar_d = variance(catchHatStar_d);
+//  var2_catchHatStar_all=variance(catchHatStar_all);
+//  var2_catchHatStar_popDensity = variance(catchHatStar_popDensity);
+  
+//  expect_v1_all = mean(var_catchHatStar_all);
+  
+//  vpc_a = var2_catchHatStar_a/(var2_catchHatStar_all + expect_v1_all);
+//  vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all); 
+//  vpc_popDensity = var2_catchHatStar_popDensity/(var2_catchHatStar_all + expect_v1_all);
 
    
   // for(i in 1:N){

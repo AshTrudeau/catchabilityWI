@@ -6,7 +6,7 @@ date: "2024-08-08"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot, geosphere)
 ```
 
 Read in selected model fit, do some visualization on parameter estimates. Then revise model script (generated quantities block) to generate catch predictions for angler skill quantiles at mean popDensity and mean log_q_l, d. Finally, generate catch predictions across popDensities and dates
@@ -34,6 +34,7 @@ lakes.key<-lakes%>%
   dplyr::select(lakeID, lakeName, lat, long, WBIC, surfaceArea)
 # Found lake missing surface area--135.97 ha
 lakes.key[lakes.key$lakeID=="FD","surfaceArea"]<-135.97
+
 
 
 projects<-dbTable("projects", fpath=db.dir, dbname=db)
@@ -276,6 +277,36 @@ lake.table.n<-rbind.data.frame(n.obs[1,], bay.row, n.obs[3:13,])%>%
          "totalRecaptured"=sumRt)
 write.csv(lake.table.n, here("output_selected_model","tables","lake.table.csv"))
 ```
+distance between lakes
+
+```{r}
+lake.dist<-lake.table.n%>%
+  dplyr::select(lakeName, lat, long)%>%
+  mutate(lake2=lakeName,
+         lat2=lat,
+         long2=long)
+
+lake.rep<-rep(lake.table.n$lakeName, each=13)
+lake.rep.2<-rep(lake.table.n$lakeName, 13)
+
+lake.dist.long<-cbind.data.frame(lake.rep, lake.rep.2)
+names(lake.dist.long)<-c("lakeName","lake2")
+
+lake.dist.full<-left_join(lake.dist.long, lake.dist[,c("lakeName","lat","long")], by="lakeName")%>%
+  left_join(lake.dist[,c("lake2","lat2","long2")], by="lake2")%>%
+  mutate(across(lat:long2, as.numeric))
+
+distances<-lake.dist.full%>%
+  rowwise()%>%
+  mutate(distance=spatialrisk::haversine(lat, long, lat2, long2),
+         distance.km=distance/1000)%>%
+  filter(distance.km!=0)
+
+mean(distances$distance.km)
+max(distances$distance.km)
+
+```
+
 ```{r}
 catch<-ggplot()+
   geom_histogram(aes(x=data.list$lmbCatch), binwidth=1)+
@@ -318,7 +349,6 @@ saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds
 #fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
-
 
 ```
 
@@ -468,26 +498,38 @@ hist(sigma.2.angler)
 # link.pred<-post_gen$link_predictions
 # sigma.2.link.pred<-post_gen$sigma_2_link_pred
 
-pred<-post_gen$posterior_pred_check
-pred_fixed<-post_gen$posterior_pred_fixed
-pred_angler<-post_gen$posterior_pred_angler
-pred_date<-post_gen$posterior_pred_date
-pred_nb_only<-post_gen$posterior_pred_nb_only
+# pred<-post_gen$posterior_pred_check
+# pred_fixed<-post_gen$posterior_pred_fixed
+# pred_angler<-post_gen$posterior_pred_angler
+# pred_date<-post_gen$posterior_pred_date
+# pred_nb_only<-post_gen$posterior_pred_nb_only
 
 sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
-                                    rep("Population density effect", 8000), rep("No predictors", 8000)),
-                            sigma=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
+                                    rep("Population density\neffect", 8000), rep("No covariates", 8000)),
+                            sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
 
-  mutate(param=factor(param, levels=c("No predictors","Angler effects","Date effects","Population density effect","Full model")))
+  mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density\neffect","Full model")))
+
+
+# results are abouat the same using median instead of mean
+
+# sigma.2.df.median<-sigma.2.pred.df%>%
+#   group_by(param)%>%
+#   summarize(med.var=median(sigma2))%>%
+#   ungroup()%>%
+#   mutate(random.var=rep(median(post_gen$sigma_2_post_nb_only)),
+#          med.var.sub=ifelse(param=="No covariates", med.var, med.var-random.var),
+#          full.mod.var=rep(median(post_gen$sigma_2_post_full)),
+#          prop.var=med.var.sub/full.mod.var)
 
 
 sigma.2.df.sum<-sigma.2.pred.df%>%
   group_by(param)%>%
-  summarize(mean.var=mean(sigma))%>%
+  summarize(mean.var=mean(sigma2))%>%
   ungroup()%>%
   mutate(random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
-         mean.var.sub=ifelse(param=="No predictors", mean.var, mean.var-random.var),
+         mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-random.var),
          full.mod.var=rep(mean(post_gen$sigma_2_post_full)),
          prop.var=mean.var.sub/full.mod.var)
 
@@ -495,12 +537,12 @@ sigma.2.pred.df.lines<-sigma.2.pred.df%>%
   left_join(sigma.2.df.sum, by="param")
 
 
-ggplot(sigma.2.pred.df.lines)+
-  geom_density(aes(x=sigma, fill=param))+
+sigma.2.density.legend<-ggplot(sigma.2.pred.df.lines)+
+  # density of variance
+  geom_density(aes(x=sigma2, fill=param))+
+  # mean variance for each density plot
   geom_vline(aes(xintercept = mean.var), linetype="dotted")+
-  geom_vline(aes(xintercept=mean.var.sub), linetype="dashed")+
-  #geom_vline(xintercept=sd(data.list$lmbCatch)^2, linetype="dotted")+
-  scale_fill_manual(values=futurama[c(3, 1, 4, 6, 2)], "Model predictions")+
+  scale_fill_manual(values=futurama[c(3, 1, 4, 8, 2)], "Sub-models")+
   facet_wrap(.~param, ncol=1)+
   xlab(expression(sigma[hat("catch")]^2))+
   xlim(0,75)+
@@ -511,16 +553,88 @@ ggplot(sigma.2.pred.df.lines)+
         axis.title.y=element_text(size=14),
         axis.title.x=element_text(size=16), 
         strip.text.x=element_blank())
+legend<-get_legend(sigma.2.density.legend)
 
-#ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=8, width=8)
+sigma.2.density<-ggplot(sigma.2.pred.df.lines)+
+  # density of variance
+  geom_density(aes(x=sigma2, fill=param))+
+  # mean variance for each density plot
+  geom_vline(aes(xintercept = mean.var), linetype="dotted")+
+  scale_fill_manual(values=futurama[c(3, 1, 4, 8, 2)], "Sub-models")+
+  facet_wrap(.~param, ncol=1)+
+  xlab(expression(sigma[hat("catch")]^2))+
+  xlim(0,75)+
+  ylab(expression(paste("Probability density p(", sigma[hat("catch")]^2, "|Catch)")))+
+  theme_bw()+
+    theme(legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=16), 
+        strip.text.x=element_blank(),
+        legend.position="none")
+
+
+ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=8, width=8)
 
   
   
 
 
-sigma.2.df.sum
+sigma.2.density
 
 ```
+
+Can I make a stacked bar plot?
+
+```{r}
+sigma.2.df.sum.bar<-sigma.2.df.sum%>%
+  filter(param!="Full model")%>%
+    mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density\neffect")))%>%
+    arrange(desc(param))%>%
+    mutate(group=rep(as.factor(1)),
+           position=cumsum(prop.var)-0.5*prop.var,
+           note=as.character(round(prop.var, digits=2)),
+           note=str_pad(note, width=4,side="right", pad="0"))%>%
+    arrange(param)
+
+
+position<-sigma.2.df.sum.bar$position
+note<-sigma.2.df.sum.bar$note
+
+bar.full<-ggplot(sigma.2.df.sum.bar)+
+  geom_bar(aes(x=group, y=prop.var, fill=param), stat="identity", position="stack")+
+  scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
+  annotate("text", x=1, y=position, label=note)+
+  ylab("Mean predicted proportion of variance")+
+  theme_classic()+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        axis.title.y=element_text(size=14))
+
+
+bar.plot<-ggplot(sigma.2.df.sum.bar)+
+  geom_bar(aes(x=group, y=prop.var, fill=param), stat="identity", position="stack")+
+  scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
+  annotate("text", x=1, y=position, label=note)+
+  ylab("Mean predicted proportion of variance")+
+  scale_y_continuous(limits=c(0,1), expand=c(0,0))+
+  theme_classic()+
+  theme(axis.title.x=element_blank(),
+        axis.text.x=element_blank(),
+        axis.ticks.x=element_blank(),
+        legend.position="none",
+        axis.title.y=element_text(size=14))
+  bar.plot
+```
+
+arranging plot
+```{r}
+plot_grid(plot_grid(bar.plot, legend, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.3, 0.7))
+ggsave(here("output_selected_model","figures","bar.density.png"), height=8, width=6)
+```
+
 
 just the random effects
 ```{r}

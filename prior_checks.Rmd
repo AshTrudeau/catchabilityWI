@@ -229,10 +229,6 @@ data.list<-list(N=nrow(data.indexed),
 
 
 ```{r}
-#fit<-readRDS(here("candidate_models","candidate_model_fits","fit_all_int.rds"))
-```
-
-```{r}
 set.seed(392)
 
 # phi was the main problem
