@@ -166,7 +166,6 @@ generated quantities{
   array[N] int posterior_pred_date;
   array[N] int posterior_pred_fixed;
   array[N] int posterior_pred_nb_only;
-  array[N] real link_predictions;
 
   real sigma_post_angler;
   real sigma_post_date;
@@ -234,7 +233,7 @@ generated quantities{
 
 
   
-    // posterior predictive checks, removed after completion to reduce run time
+    // posterior predictions for variance partitioning
    for(n in 1:N){
      posterior_pred_check[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] +  beta * log_popDensity_sc[LL[n]],phi);
    }
@@ -255,9 +254,6 @@ generated quantities{
      posterior_pred_nb_only[n]=neg_binomial_2_log_safe_rng(log_effort[n] + log_q_mu + log_mu_q_a + log_mu_q_d, phi);
    }
    
-   for(n in 1:N){
-     link_predictions[n]=log_effort[n] + log_q_mu + log_q_a[AA[n]] + log_q_d[DD[n]] + beta * log_popDensity_sc[LL[n]];
-   }
 
 
 
@@ -333,7 +329,7 @@ generated quantities{
     predict_quantile_date_catch_popDens[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + quantile_date_rep[i] +beta*log_popDensity_sc_rep[i],phi);
   }  
 
-  // for fun, the best and worst anglers on the best and worst days
+  // Compare the best and worst anglers on the best and worst days
   
 
 
