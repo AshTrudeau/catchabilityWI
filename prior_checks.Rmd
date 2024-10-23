@@ -663,4 +663,45 @@ plot_grid(popDensity.50, popDensity.100, rel_widths=c(1, 1.3), labels=c("A","B")
 ggsave(here("output_selected_model","prior_checks","prior_checks_student", "popDensity.compare.png"), height=4, width=8)
 
 ```
+Selected model
+```{r}
+fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
+
+
+```
+
+Tables of parameters of interest
+
+```{r}
+table.student.10<-rstan::summary(fit_student, pars=c("beta","phi","sigma_q_a","sigma_q_d", "popDensity"))
+
+table.student.1<-rstan::summary(fit_student_1, pars=c("beta","phi","sigma_q_a","sigma_q_d", "popDensity"))
+
+table.selected<-rstan::summary(fit_gen, pars=c("beta","phi","sigma_q_a","sigma_q_d", "popDensity"))
+
+table.student.1<-as.data.frame(table.student.1$summary)%>%
+  dplyr::select(mean, sd)%>%
+  mutate(parameter=rownames(as.data.frame(table.student.1$summary)))%>%
+  remove_rownames()%>%
+  mutate(mean_sd_student_1 = paste0(as.character(round(mean, 2)), " (" ,as.character(round(sd, 2)), ")"))
+
+table.student.10<-as.data.frame(table.student.10$summary)%>%
+    dplyr::select(mean, sd)%>%
+  mutate(parameter=rownames(as.data.frame(table.student.10$summary)))%>%
+  remove_rownames()%>%
+  mutate(mean_sd_student_10 = paste0(as.character(round(mean, 2)), " (" ,as.character(round(sd, 2)), ")"))
+
+
+table.compare<-as.data.frame(table.selected$summary)%>%
+  dplyr::select(mean, sd)%>%
+  mutate(parameter=rownames(as.data.frame(table.selected$summary)))%>%
+  remove_rownames()%>%
+  dplyr::select(parameter, mean, sd)%>%
+  mutate(mean_sd_selected=paste0(as.character(round(mean, 2)), " (" ,as.character(round(sd, 2)), ")"))%>%
+  left_join(table.student.1[,c("parameter","mean_sd_student_1")], by="parameter")%>%
+  left_join(table.student.10[,c("parameter","mean_sd_student_10")], by="parameter")%>%
+  dplyr::select(parameter, mean_sd_selected:mean_sd_student_10)
+
+write.csv(table.compare, here::here("output_selected_model","prior_checks","parameter.compare.prior.csv"))
+```
 
