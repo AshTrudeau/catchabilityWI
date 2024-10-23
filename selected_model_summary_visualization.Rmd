@@ -334,20 +334,20 @@ ggsave(here::here("output_selected_model","figures","catch.effort.histograms.png
 
 
 ```{r}
-set.seed(26)
-
-# this model is the selected model that also generates posterior predictions
- fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
-                  data=data.list,
-                  control=list(stepsize=0.1, max_treedepth=15),
-                  chains=4,
-                  warmup=1000,
-                  iter=3000,
-                  cores=4,
-                  refresh=0)
-saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
+# set.seed(26)
+# 
+# # this model is the selected model that also generates posterior predictions
+#  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
+#                   data=data.list,
+#                   control=list(stepsize=0.1, max_treedepth=15),
+#                   chains=4,
+#                   warmup=1000,
+#                   iter=3000,
+#                   cores=4,
+#                   refresh=0)
+# saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
 # for use after model has been fit
-#fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
+fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
 
@@ -506,11 +506,11 @@ hist(sigma.2.angler)
 # pred_nb_only<-post_gen$posterior_pred_nb_only
 
 sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
-                                    rep("Population density\neffect", 8000), rep("No covariates", 8000)),
+                                    rep("Population density effect", 8000), rep("No covariates", 8000)),
                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
 
-  mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density\neffect","Full model")))
+  mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
 
 
 # results are abouat the same using median instead of mean
@@ -590,7 +590,7 @@ Can I make a stacked bar plot?
 ```{r}
 sigma.2.df.sum.bar<-sigma.2.df.sum%>%
   filter(param!="Full model")%>%
-    mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density\neffect")))%>%
+    mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect")))%>%
     arrange(desc(param))%>%
     mutate(group=rep(as.factor(1)),
            position=cumsum(prop.var)-0.5*prop.var,
@@ -661,16 +661,6 @@ ggsave(here::here("output_selected_model","figures","random.effects.sigma.png"),
 ```
 
 
-
-
-```{r}
-pred_fixed<-post_gen$predict_fixed
-# get the variance by row, so I have a vector of pred_fixed variances
-
-pred_var<-apply(pred_fixed, 1,var)
-
-hist(pred_var)
-```
 
 
 ```{r}
@@ -802,12 +792,20 @@ angler.pred.pop<-post_gen$predict_quantile_angler_catch_popDens
 
 catch.angler.df<-data.frame(popDensity=popDensity,
                             percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
-                            meanCatch=colMeans(angler.pred.pop))
+                            meanCatch=colMeans(angler.pred.pop)
+                            )
+
+pred.quantiles.angler<-apply(angler.pred.pop, 2, quantile, probs=c(0.025, 0.125,0.25, 0.75, 0.875,0.975))
+
+pred.quant.angler.df<-as.data.frame(t(pred.quantiles.angler), names=rownames(pred.quantiles.angler))
+
+angler.plot<-cbind.data.frame(catch.angler.df, pred.quant.angler.df)
 
 gradient.a<-c("#ffdce2","#ffced1","#ffafa6","#ff8d6b","#FF6F00FF")
 
-angler.pop<-ggplot(catch.angler.df)+
+angler.pop<-ggplot(angler.plot)+
   geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
+  geom_ribbon(aes(x=popDensity, ymin=`25%`, ymax=`75%`, group=percentile), alpha=0.1)+
   scale_color_manual(values=gradient.a)+
   guides(color=guide_legend(title=expression(paste("Angler skill\neffect percentile"))))+
   xlab("Population density (1/ha)")+
@@ -820,6 +818,8 @@ angler.pop<-ggplot(catch.angler.df)+
 angler.pop
 ggsave(here("output_selected_model","figures","angler.effect.popDensity.png"), height=4, width=6)
 ```
+yeah, CIs don't show up well, but I think I can do them for the best-worst comparison
+
 Next daily conditions
 
 ```{r}
@@ -868,11 +868,20 @@ catch.date.df<-data.frame(popDensity=popDensity,
                             percentile=factor(percentile, levels=rev(c("95%","75%","50%","25%","5%"))),
                             meanCatch=colMeans(date.pred.pop))
 
-gradient.a<-c("#efd2dd","#d9a6c3","#bf7caf","#9e55a0","#8A4198FF")
+pred.quantiles.date<-apply(date.pred.pop, 2, quantile, probs=c(0.025, 0.125,0.25, 0.75, 0.875,0.975))
 
-date.pop<-ggplot(catch.date.df)+
+
+pred.quant.date.df<-as.data.frame(t(pred.quantiles.date), names=rownames(pred.quantiles.date))
+
+date.plot<-cbind.data.frame(catch.date.df, pred.quant.date.df)
+
+
+gradient.d<-c("#efd2dd","#d9a6c3","#bf7caf","#9e55a0","#8A4198FF")
+
+date.pop<-ggplot(date.plot)+
   geom_line(aes(x=popDensity, y=meanCatch, color=percentile), linewidth=2)+
-  scale_color_manual(values=gradient.a)+
+  geom_ribbon(aes(x=popDensity, ymin=`25%`, ymax=`75%`, group=percentile), alpha=0.1)+
+  scale_color_manual(values=gradient.d)+
   guides(color=guide_legend(title=expression(paste("Daily conditions\neffect percentile"))))+
   xlab("Population density (1/ha)")+
   ylab("Predicted mean catch")+
@@ -933,8 +942,13 @@ best.worst.df<-data.frame(pred.catch=colMeans(post_gen$predict_best_worst),
          facet=ifelse(quant.angler=="95%", "High skill (95th percentile)", "Low skill (5th percentile)"),
          legend=ifelse(quant.date=="95%", "Good (95th percentile)", "Poor (5th percentile)"))
 
-ggplot(best.worst.df)+
+best.worst.ci<-t(apply(post_gen$predict_best_worst, 2, quantile, probs=c(0.025, 0.125,0.25, 0.75, 0.875,0.975)))
+
+best.worst.plot<-cbind.data.frame(best.worst.df, best.worst.ci)
+
+ggplot(best.worst.plot)+
   geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  geom_ribbon(aes(x=pop.density, ymin=`25%`, ymax=`75%`, group=legend), alpha=0.1)+
   scale_color_manual(values=c( "#F05C3BFF", "#197EC0FF"))+
   xlim(0,150)+
   facet_grid(.~facet)+
@@ -968,8 +982,13 @@ medium.df<-data.frame(pred.catch=colMeans(post_gen$predict_medium),
   mutate(facet=ifelse(quant.angler=="75%", "Higher skill (75th percentile)", "Lower skill (25th percentile)"),
          legend=ifelse(quant.date=="75%", "Good (75th percentile)", "Poor (25th percentile)"))
 
-ggplot(medium.df)+
+medium.ci<-t(apply(post_gen$predict_medium, 2, quantile, probs=c(0.025, 0.125,0.25, 0.75, 0.875,0.975)))
+
+medium.plot<-cbind.data.frame(medium.df, medium.ci)
+
+ggplot(medium.plot)+
   geom_line(aes(x=pop.density, y=pred.catch, color=legend), linewidth=2)+
+  geom_ribbon(aes(x=pop.density, ymin=`25%`, ymax=`75%`, group=legend), alpha=0.2)+
   scale_color_manual(values=c( "#F05C3BFF", "#197EC0FF"))+
   xlim(0,150)+
   facet_grid(.~facet)+
