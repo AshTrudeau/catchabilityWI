@@ -138,10 +138,7 @@ model {
   
   lmbCatch ~ neg_binomial_2_log(logCatchHat, phi);
   
-  //log_mu_q_a ~ normal(0,1);
-  //log_mu_q_d ~ normal(0,1);
-  //log_mu_q_l ~ normal(0,1);
-    
+
   log_mu_q_a ~ student_t(3,0,1);
   log_mu_q_d ~ student_t(3,0,1);
 
@@ -149,9 +146,6 @@ model {
   q_a_raw ~ normal(0,1);
   q_d_raw ~ normal(0,1);
 
-  //sigma_q_a ~ exponential(1);
-  //sigma_q_d ~ exponential(1);
-  //sigma_q_l ~ exponential(1);
   sigma_q_a ~ student_t(3,0,1);
   sigma_q_d ~ student_t(3,0,1);
 
@@ -160,7 +154,6 @@ model {
  log_q_mu ~ student_t(3,0,1);
   
   phi ~ gamma(1,5);
-  //beta ~ lognormal(-1, 1);
   beta ~ student_t(3,0,1);
 
 }
@@ -174,26 +167,7 @@ generated quantities{
   array[N] int posterior_pred_fixed;
   array[N] int posterior_pred_nb_only;
   array[N] real link_predictions;
-  // model expectation for converting phi of catch NB distribution to sigma
-  // real prediction_b0;
-  // real lambda;
-  // real sigma_2_random;
-  // real sigma_random;
-  
-  // for sd of fixed effects only
- // vector[N] predict_fixed;
-  //vector[N] predict_random;
-  // real sigma_2_fixed;
-  // real sigma_2_pred;
-  // real sigma_2_link_pred;
-  // real sigma_2_total;
-  // real sigma_2_resid;
-  // real sigma_fixed;
-  // real sigma_pred;
-  // real sigma_link_pred;
-  // real sigma_total;
-  // real sigma_resid;
-  
+
   real sigma_post_angler;
   real sigma_post_date;
   real sigma_post_fixed;
@@ -211,22 +185,7 @@ generated quantities{
   real prop_var_popDensity;
   real prop_var_nb;
   
-  // real prop_var_explained_pred;
-  // real prop_angler_vs_fixed_pred;
-  // real prop_date_vs_fixed_pred;
 
-  // real prop_fixed_vs_pred;
-  // real prop_angler_vs_pred;
-  // real prop_date_vs_pred;
-
-
- // real r2_marginal;
-//  real r2_conditional;
-  
- //real ICC_a;
- //real ICC_d;
-// real ICC_l;
-  
   real prior_t_popDensity;
   real prior_t_other;
   real prior_phi;
@@ -273,26 +232,6 @@ generated quantities{
   prior_t_other =student_t_rng(3,0,1);
   prior_phi = gamma_rng(1, 5);
 
-  // forget it. Instead of r2 values, I'm going to simplify and show graphically the variance in random effects, fixed effect predictions, and predicted total variance (with vertical line for data variance)
-  
-  // getting 'residual variance' on log scale (observation-specific variance from Nakagawa et al 2017)
-//  prediction_b0 = mean(log_effort) + log_q_mu;
-  
-  // does Nakagawa et al 2017 have a typo? it describes sigma tau as the total variance on the latent scale, but then only gives 
-  // sigma squared of the random effect? 
-  // no  i checked supplement example, it's just the random effects
-// lambda = exp(prediction_b0 + 0.5*(sigma_q_a^2+sigma_q_d^2));
-  
-//  sigma_2_resid = trigamma(((1/lambda)+(1/phi))^(-1));
-
-// I bet the problem is that predict_fixed isn't accounting for the uncertainty in the log_popDensity estimates.
-//  for(i in 1:N){
-//  predict_fixed[i] = log_effort[i] + log_q_mu + log_mu_q_a + log_mu_q_d  + beta * log_popDensity_sc[LL[i]];
-//  }
-  
-//    for(i in 1:N){
-//  predict_random[i] = log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]];
-//  }
 
   
     // posterior predictive checks, removed after completion to reduce run time
@@ -321,24 +260,7 @@ generated quantities{
    }
 
 
-//  sigma_2_fixed = variance(predict_fixed);
-//  sigma_2_random = variance(predict_random);
-//  sigma_2_pred = variance(posterior_pred_check);
-//  sigma_pred = sqrt(sigma_2_pred);
-  
-//  sigma_2_link_pred = variance(link_predictions);
-//  sigma_link_pred = sqrt(sigma_2_link_pred);
-  
-//  sigma_fixed = sqrt(sigma_2_fixed);
-//  sigma_angler = sqrt(sigma_2_angler);
-//  sigma_date = sqrt(sigma_2_date);
-//  sigma_pred = sqrt(sigma_2_pred);
-  
-//  sigma_2_random = sigma_q_a^2+sigma_q_d^2;
-//  sigma_random=sqrt(sigma_2_random);
-  
-//  sigma_2_total=sigma_2_fixed+sigma_2_random+sigma_2_resid;
-  
+
   sigma_2_post_fixed = variance(posterior_pred_fixed);
   sigma_2_post_angler = variance(posterior_pred_angler);
   sigma_2_post_date = variance(posterior_pred_date);
@@ -357,25 +279,7 @@ generated quantities{
   prop_var_nb = (sigma_2_post_nb_only)/sigma_2_post_full;
  
   
-  //r2_marginal = sigma_2_fixed/sigma_2_total;
-  //r2_conditional = (sigma_2_fixed+sigma_2_random)/sigma_2_total;
-  
-  //ICC_a = (sigma_q_a)^2/sigma_2_total;
-  //ICC_d = (sigma_q_d)^2/sigma_2_total;
- // ICC_l = (sigma_q_l)^2/sigma_2_total;
-  
- // prop_var_explained_pred = (sigma_2_random + sigma_2_fixed)/sigma_2_pred;
-//  prop_angler_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
-//  prop_date_vs_fixed_pred = sigma_q_a^2/sigma_2_fixed;
 
-//  prop_fixed_vs_pred = sigma_2_fixed/sigma_2_pred;
-//  prop_angler_vs_pred = sigma_q_a^2/sigma_2_pred;
-//  prop_date_vs_pred = sigma_q_d^2/sigma_2_pred;
-
-//  sigma_total = sqrt(sigma_2_total);
-//  sigma_fixed = sqrt(sigma_2_fixed);
-//  sigma_resid = sqrt(sigma_2_resid);
-  
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d +  beta*mean(log_popDensity_sc), phi);
   }
@@ -461,51 +365,6 @@ generated quantities{
     predict_medium[i]=neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + medium_angler[i] + medium_date[i] + beta*log_popDensity_sc_best_worst[i],phi);
   }
 
-  // alternatively, I may have found the issue I was having with catchHatStar
-  // yeah no that still doesn't work. 
-  
-//  for(i in 1:100){
-//    sim_log_q_a[i] = normal_rng(log_mu_q_a, sigma_q_a);
-//    sim_log_q_d[i] = normal_rng(log_mu_q_d, sigma_q_d);
-//  }
-  
-  // scaled mean log pop density is zero, so leave it out if I'm simulating at mean log population density
-//  for(i in 1:100){
-//    catchHatStar_all[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + beta*log_popDensity_sc[5], phi);
-//    catchHatStar_a[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + sim_log_q_a[i] + log_mu_q_d + beta*log_popDensity_sc[5], phi);
-//    catchHatStar_d[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + sim_log_q_d[i] + beta*log_popDensity_sc[5], phi);
-//  }
-  
-//  for(i in 1:L){
-//    catchHatStar_popDensity[i] = neg_binomial_2_log_safe_rng(mean(log_effort) + log_q_mu + log_mu_q_a + log_mu_q_d + beta*log_popDensity_sc[i], phi);
-//  }
-
-  // level 1 variance
-  // log parameterization, so lambda (mean) is logged, have to exponentiate
-//  for(i in 1:100){
-//    lambda_catchHatStar_all[i] = exp(mean(log_effort) + log_q_mu + sim_log_q_a[i] + sim_log_q_d[i] + beta*log_popDensity_sc[5]);
-//  }
-  
-//  for(i in 1:100){
-//  var_catchHatStar_all[i] = lambda_catchHatStar_all[i] + ((lambda_catchHatStar_all[i]^2)/phi);
-//  }
-  
-  // level 2 variance
-//  var2_catchHatStar_a = variance(catchHatStar_a);
-//  var2_catchHatStar_d = variance(catchHatStar_d);
-//  var2_catchHatStar_all=variance(catchHatStar_all);
-//  var2_catchHatStar_popDensity = variance(catchHatStar_popDensity);
-  
-//  expect_v1_all = mean(var_catchHatStar_all);
-  
-//  vpc_a = var2_catchHatStar_a/(var2_catchHatStar_all + expect_v1_all);
-//  vpc_d = var2_catchHatStar_d/(var2_catchHatStar_all + expect_v1_all); 
-//  vpc_popDensity = var2_catchHatStar_popDensity/(var2_catchHatStar_all + expect_v1_all);
-
-   
-  // for(i in 1:N){
-  //   log_lik[i] = neg_binomial_2_log_lpmf(lmbCatch[i]|log_effort[i] + log_q_mu + log_q_a[AA[i]] + log_q_d[DD[i]] + log_q_l[LL[i]] + beta * log_popDensity_sc[LL[i]], phi);
-   //}
 
 
 }

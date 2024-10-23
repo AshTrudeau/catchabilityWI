@@ -336,7 +336,7 @@ ggsave(here::here("output_selected_model","figures","catch.effort.histograms.png
 ```{r}
 set.seed(26)
 
-
+# this model is the selected model that also generates posterior predictions
  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
                   data=data.list,
                   control=list(stepsize=0.1, max_treedepth=15),
@@ -346,6 +346,7 @@ set.seed(26)
                   cores=4,
                   refresh=0)
 saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
+# for use after model has been fit
 #fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
@@ -570,7 +571,7 @@ sigma.2.density<-ggplot(sigma.2.pred.df.lines)+
         legend.text=element_text(size=12),
         axis.title.y=element_text(size=14),
         axis.title.x=element_text(size=16), 
-        strip.text.x=element_blank(),
+        #strip.text.x=element_blank(),
         legend.position="none")
 
 
@@ -633,6 +634,13 @@ arranging plot
 ```{r}
 plot_grid(plot_grid(bar.plot, legend, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.3, 0.7))
 ggsave(here("output_selected_model","figures","bar.density.png"), height=8, width=6)
+```
+```{r}
+plot_grid(plot_grid(bar.plot, NULL, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.3, 0.7), labels=c("A","B"))
+
+
+ggsave(here("output_selected_model","figures","alt.bar.density.png"), height=8, width=6)
+
 ```
 
 
