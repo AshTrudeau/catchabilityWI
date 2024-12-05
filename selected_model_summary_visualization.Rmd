@@ -542,6 +542,7 @@ sigma.2.df.sum<-sigma.2.pred.df%>%
          prop.var=mean.var.sub/full.mod.var,
          var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
          sd.prop.var=sqrt(var.prop.var))
+# now use the variance to estimate credible intervals of a beta distribution I guess
 
 sigma.2.pred.df.lines<-sigma.2.pred.df%>%
   left_join(sigma.2.df.sum, by="param")
