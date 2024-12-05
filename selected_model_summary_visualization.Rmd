@@ -527,12 +527,21 @@ sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects
 
 sigma.2.df.sum<-sigma.2.pred.df%>%
   group_by(param)%>%
-  summarize(mean.var=mean(sigma2))%>%
+  summarize(mean.var=mean(sigma2),
+            var.of.var=sd(sigma2)^2)%>%
   ungroup()%>%
-  mutate(random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
-         mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-random.var),
+  mutate(mean.random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
+         var.random.var=rep(sd(post_gen$sigma_2_post_nb_only)^2),
+         mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-mean.random.var),
+         # propagating uncorrelated variance, so this is variance of (submodel) variance (sum of variances)
+         # variance of the proportion variance is approximated by a first order taylor expansion
+         # https://www.stat.cmu.edu/~hseltman/files/ratio.pdf 
+         var.var.sub=var.random.var+var.of.var,
          full.mod.var=rep(mean(post_gen$sigma_2_post_full)),
-         prop.var=mean.var.sub/full.mod.var)
+         var.full.mod.var=rep(sd(post_gen$sigma_2_post_full)^2),
+         prop.var=mean.var.sub/full.mod.var,
+         var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
+         sd.prop.var=sqrt(var.prop.var))
 
 sigma.2.pred.df.lines<-sigma.2.pred.df%>%
   left_join(sigma.2.df.sum, by="param")
