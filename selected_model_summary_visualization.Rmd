@@ -6,7 +6,7 @@ date: "2024-08-08"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot, geosphere)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot, geosphere, PerformanceAnalytics, MASS, fitdistrplus)
 ```
 
 Read in selected model fit, do some visualization on parameter estimates. Then revise model script (generated quantities block) to generate catch predictions for angler skill quantiles at mean popDensity and mean log_q_l, d. Finally, generate catch predictions across popDensities and dates
@@ -304,6 +304,8 @@ distances<-lake.dist.full%>%
 
 mean(distances$distance.km)
 max(distances$distance.km)
+min(distances$distance.km)
+sd(distances$distance.km)
 
 ```
 
@@ -512,6 +514,64 @@ sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects
 
   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
 
+sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
+                              sigma2_angler=post_gen$sigma_2_post_angler-post_gen$sigma_post_nb_only,
+                              sigma2_date=post_gen$sigma_2_post_date-post_gen$sigma_post_nb_only,
+                              sigma2_PE=post_gen$sigma_2_post_fixed-post_gen$sigma_post_nb_only,
+                              sigma2_random=post_gen$sigma_2_post_nb_only)%>%
+  mutate(sigma2_sum=sigma2_angler+sigma2_date+sigma2_PE+sigma2_random,
+         prop_PE=sigma2_PE/sigma2_sum,
+         prop_angler=sigma2_angler/sigma2_sum,
+         prop_date=sigma2_date/sigma2_sum,
+         prop_random=sigma2_random/sigma2_sum,
+         )
+
+hist(sigma.2.pred.wide$prop_angler)
+hist(sigma.2.pred.wide$prop_date)
+hist(sigma.2.pred.wide$prop_PE)
+hist(sigma.2.pred.wide$prop_random)
+
+hist(sigma.2.pred.wide$sigma2_full)
+hist(sigma.2.pred.wide$sigma2_sum)
+```
+I think that now I want to fit a beta distribution to each of these distributios of proportion variance
+
+```{r}
+angler.prop<-fitdist(sigma.2.pred.wide$prop_angler, "beta")
+mean(sigma.2.pred.wide$prop_angler)
+sd(sigma.2.pred.wide$prop_angler)
+
+alpha<-angler.prop$estimate[1]
+beta<-angler.prop$estimate[2]
+
+angler.prop$estimate[1]/(angler.prop$estimate[1]+angler.prop$estimate[2])
+sqrt((alpha*beta)/((alpha+beta)^2*(alpha+beta+1)))
+
+plot(angler.prop)
+```
+
+
+```{r}
+ggplot(sigma.2.pred.wide)+
+  geom_point(aes(x=sigma2_angler, y=sigma2_date))
+
+ggplot(sigma.2.pred.wide)+
+  geom_point(aes(x=prop_angler, y=prop_date))
+
+cor.sigma2<-select(sigma.2.pred.wide, sigma2_full, sigma2_angler, sigma2_date, sigma2_PE)
+
+cor.prop<-select(sigma.2.pred.wide, prop_PE:prop_random)
+
+chart.Correlation(cor.sigma2)
+
+```
+
+```{r}
+chart.Correlation(cor.prop)
+
+```
+
+```{r}
 
 # results are abouat the same using median instead of mean
 
@@ -543,6 +603,11 @@ sigma.2.df.sum<-sigma.2.pred.df%>%
          var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
          sd.prop.var=sqrt(var.prop.var))
 # now use the variance to estimate credible intervals of a beta distribution I guess
+
+alpha.beta<-sigma.2.df.sum%>%
+  select(param, prop.var, var.prop.var)%>%
+  mutate(alpha=(((1-prop.var)/var.prop.var)-(1/prop.var))*prop.var^2,
+         beta=alpha*((1/prop.var)-1))
 
 sigma.2.pred.df.lines<-sigma.2.pred.df%>%
   left_join(sigma.2.df.sum, by="param")
