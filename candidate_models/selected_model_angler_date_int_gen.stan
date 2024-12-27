@@ -269,10 +269,10 @@ generated quantities{
   sigma_post_nb_only= sqrt(sigma_2_post_nb_only);
   sigma_post_full = sqrt(sigma_2_post_full);
   
-  prop_var_angler = (sigma_2_post_angler-sigma_2_post_nb_only)/sigma_2_post_full;
-  prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
-  prop_var_popDensity =(sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
-  prop_var_nb = (sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_angler = (sigma_2_post_angler-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
+  prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
+  prop_var_popDensity =(sigma_2_post_fixed-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
+  prop_var_nb = (sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
  
   
 

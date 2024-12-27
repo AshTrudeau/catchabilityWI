@@ -336,20 +336,20 @@ ggsave(here::here("output_selected_model","figures","catch.effort.histograms.png
 
 
 ```{r}
-# set.seed(26)
-# 
-# # this model is the selected model that also generates posterior predictions
-#  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
-#                   data=data.list,
-#                   control=list(stepsize=0.1, max_treedepth=15),
-#                   chains=4,
-#                   warmup=1000,
-#                   iter=3000,
-#                   cores=4,
-#                   refresh=0)
-# saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
+ set.seed(26)
+ 
+ # this model is the selected model that also generates posterior predictions
+  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
+                   data=data.list,
+                   control=list(stepsize=0.1, max_treedepth=15),
+                   chains=4,
+                   warmup=1000,
+                   iter=3000,
+                   cores=4,
+                   refresh=0)
+ saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
 # for use after model has been fit
-fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
+#fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
 
@@ -500,54 +500,51 @@ hist(sigma.2.angler)
 ```{r}
 # link.pred<-post_gen$link_predictions
 # sigma.2.link.pred<-post_gen$sigma_2_link_pred
-
+# 
 # pred<-post_gen$posterior_pred_check
 # pred_fixed<-post_gen$posterior_pred_fixed
 # pred_angler<-post_gen$posterior_pred_angler
 # pred_date<-post_gen$posterior_pred_date
 # pred_nb_only<-post_gen$posterior_pred_nb_only
+# 
+# sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
+#                                     rep("Population density effect", 8000), rep("No covariates", 8000)),
+#                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
+#                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
+# 
+#   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
+# 
+# # for each iteration of the model, I subtract the nb_only sub-model variance from the other sub-models (to get unique variance), then divide those by the sum of variance (rather than the variance of the full model predictions)
+# 
+# sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
+#                               sigma2_angler_nb=post_gen$sigma_2_post_angler,
+#                               sigma2_date_nb=post_gen$sigma_2_post_date,
+#                               sigma2_PE_nb=post_gen$sigma_2_post_fixed,
+#                               sigma2_nb=post_gen$sigma_2_post_nb_only)%>%
+#   mutate(sigma2_angler=sigma2_angler_nb-sigma2_nb,
+#          sigma2_date=sigma2_date_nb-sigma2_nb,
+#          sigma2_PE=sigma2_PE_nb-sigma2_nb,
+#          sigma2_sum=sigma2_angler+sigma2_date+sigma2_PE+sigma2_nb,
+#          prop_PE=sigma2_PE/sigma2_sum,
+#          prop_angler=sigma2_angler/sigma2_sum,
+#          prop_date=sigma2_date/sigma2_sum,
+#          prop_random=sigma2_nb/sigma2_sum)
+# 
+# hist(sigma.2.pred.wide$prop_angler)
+# hist(sigma.2.pred.wide$prop_date)
+# hist(sigma.2.pred.wide$prop_PE)
+# hist(sigma.2.pred.wide$prop_random)
+# 
+# hist(sigma.2.pred.wide$sigma2_full)
+# hist(sigma.2.pred.wide$sigma2_sum)
+# 
 
-sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
-                                    rep("Population density effect", 8000), rep("No covariates", 8000)),
-                            sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
-                                    post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
 
-  mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
 
-sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
-                              sigma2_angler=post_gen$sigma_2_post_angler-post_gen$sigma_post_nb_only,
-                              sigma2_date=post_gen$sigma_2_post_date-post_gen$sigma_post_nb_only,
-                              sigma2_PE=post_gen$sigma_2_post_fixed-post_gen$sigma_post_nb_only,
-                              sigma2_random=post_gen$sigma_2_post_nb_only)%>%
-  mutate(sigma2_sum=sigma2_angler+sigma2_date+sigma2_PE+sigma2_random,
-         prop_PE=sigma2_PE/sigma2_sum,
-         prop_angler=sigma2_angler/sigma2_sum,
-         prop_date=sigma2_date/sigma2_sum,
-         prop_random=sigma2_random/sigma2_sum,
-         )
-
-hist(sigma.2.pred.wide$prop_angler)
-hist(sigma.2.pred.wide$prop_date)
-hist(sigma.2.pred.wide$prop_PE)
-hist(sigma.2.pred.wide$prop_random)
-
-hist(sigma.2.pred.wide$sigma2_full)
-hist(sigma.2.pred.wide$sigma2_sum)
-```
-I think that now I want to fit a beta distribution to each of these distributios of proportion variance
-
-```{r}
-angler.prop<-fitdist(sigma.2.pred.wide$prop_angler, "beta")
-mean(sigma.2.pred.wide$prop_angler)
-sd(sigma.2.pred.wide$prop_angler)
-
-alpha<-angler.prop$estimate[1]
-beta<-angler.prop$estimate[2]
-
-angler.prop$estimate[1]/(angler.prop$estimate[1]+angler.prop$estimate[2])
-sqrt((alpha*beta)/((alpha+beta)^2*(alpha+beta+1)))
-
-plot(angler.prop)
+hist(post_gen$prop_var_popDensity)
+hist(post_gen$prop_var_angler)
+hist(post_gen$prop_var_date)
+hist(post_gen$prop_var_nb)
 ```
 
 
