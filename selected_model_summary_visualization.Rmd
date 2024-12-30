@@ -6,7 +6,7 @@ date: "2024-08-08"
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot, geosphere, PerformanceAnalytics, MASS, fitdistrplus)
+pacman::p_load(tidyverse, here, lubridate, lme4, loo, rstan, shinystan, truncnorm, MFEUtilities, RColorBrewer, cowplot, bayesplot, cmdstanr, posterior, ggsci, cowplot, geosphere, PerformanceAnalytics, MASS, fitdistrplus, bayestestR)
 ```
 
 Read in selected model fit, do some visualization on parameter estimates. Then revise model script (generated quantities block) to generate catch predictions for angler skill quantiles at mean popDensity and mean log_q_l, d. Finally, generate catch predictions across popDensities and dates
@@ -490,23 +490,11 @@ ggsave(here("output_selected_model", "figures","sigma_prior_check.png"))
 
 ```
 
-```{r}
-sigma.2.angler<-post_gen$sigma_2_post_angler
-hist(sigma.2.angler)
-```
-
 
 
 ```{r}
-# link.pred<-post_gen$link_predictions
-# sigma.2.link.pred<-post_gen$sigma_2_link_pred
-# 
-# pred<-post_gen$posterior_pred_check
-# pred_fixed<-post_gen$posterior_pred_fixed
-# pred_angler<-post_gen$posterior_pred_angler
-# pred_date<-post_gen$posterior_pred_date
-# pred_nb_only<-post_gen$posterior_pred_nb_only
-# 
+
+# sanity check on proportion variance estimation
  sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
                                      rep("Population density effect", 8000), rep("No covariates", 8000)),
                              sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
@@ -528,106 +516,33 @@ hist(sigma.2.angler)
           prop_date=sigma2_date/sigma2_full,
           prop_random=sigma2_nb/sigma2_full)
 
+# these should be identical
+ 
 hist(sigma.2.pred.wide$prop_angler)
 hist(sigma.2.pred.wide$prop_date)
 hist(sigma.2.pred.wide$prop_PE)
 hist(sigma.2.pred.wide$prop_random)
-# 
-# hist(sigma.2.pred.wide$sigma2_full)
-# hist(sigma.2.pred.wide$sigma2_sum)
-# 
 
+hist(post_gen$prop_var_angler)
+hist(post_gen$prop_var_date)
+hist(post_gen$prop_var_popDensity)
+hist(post_gen$prop_var_nb)
 
-
-hist(post_gen$prop_var_popDensity_sum)
-hist(post_gen$prop_var_angler_sum)
-hist(post_gen$prop_var_date_sum)
-hist(post_gen$prop_var_nb_sum)
-
-hist(post_gen$prop_var_popDensity_full)
-hist(post_gen$prop_var_angler_full)
-hist(post_gen$prop_var_date_full)
-hist(post_gen$prop_var_nb_full)
-
-# no, this didn't work.
-
-sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
-                                     rep("Population density effect", 8000), rep("No covariates", 8000), 
-                                    rep("Sum of variance", 8000)),
-                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
-                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only, post_gen$sum_sigma_2))%>%
- 
-   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model", "Sum of variance")))
-
-prop.var.df<-data.frame(param=c(rep("Angler effects", 8000), rep("Date effects", 8000), 
-                                rep("Population density effect", 8000), rep("No covariates", 8000)),
-                        prop.var=c(post_gen$prop_var_angler, post_gen$prop_var_date, post_gen$prop_var_popDensity,
-                                   post_gen$prop_var_nb))
-
- sigma.2.df.sum<-sigma.2.pred.df%>%
-   group_by(param)%>%
-   summarize(mean.var=mean(sigma2),
-             var.of.var=sd(sigma2)^2,
-             sd.of.var=sd(sigma2))%>%
-   ungroup()
-
- sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
-                              sigma2_angler_nb=post_gen$sigma_2_post_angler,
-                              sigma2_date_nb=post_gen$sigma_2_post_date,
-                              sigma2_PE_nb=post_gen$sigma_2_post_fixed,
-                              sigma2_nb=post_gen$sigma_2_post_nb_only,
-                              sum_sigma2=post_gen$sum_sigma_2,
-                              prop_angler=post_gen$prop_var_angler,
-                              prop_date=post_gen$prop_var_date,
-                              prop_popDensity=post_gen$prop_var_popDensity,
-                              prop_random=post_gen$prop_var_nb)%>%
-   mutate(sigma2_angler=sigma2_angler_nb-sigma2_nb,
-          sigma2_date=sigma2_date_nb-sigma2_nb,
-          sigma2_popDensity=sigma2_PE_nb-sigma2_nb)
- 
  sigma.2.df.sum<-sigma.2.pred.df%>%
    group_by(param)%>%
    summarize(mean.var=mean(sigma2),
              sd.of.var=sd(sigma2),
              var.of.var=sd.of.var^2)
+ 
+ sigma.2.pred.df.lines<-sigma.2.pred.df%>%
+   left_join(sigma.2.df.sum, by="param")
 ```
 
-I'm so lost. Left off here 12/27/24. Struggling with proportion variance still--was adding up the variance of each submodel really appropriate? I'm counting the random variation multiple times! 
+Now producing plots showing the probability density of the simulation variances for each sub-model compared to the full model (with vertical dotted lines for mean variance--still needed?)
+
+I'm going to add the standard deviation of the proportion estimates in parentheses in text
+
 ```{r}
-
-#sigma.2.df.sum<-sigma.2.pred.df%>%
-  
-
-# results are abouat the same using median instead of mean
-
-# sigma.2.df.median<-sigma.2.pred.df%>%
-#   group_by(param)%>%
-#   summarize(med.var=median(sigma2))%>%
-#   ungroup()%>%
-#   mutate(random.var=rep(median(post_gen$sigma_2_post_nb_only)),
-#          med.var.sub=ifelse(param=="No covariates", med.var, med.var-random.var),
-#          full.mod.var=rep(median(post_gen$sigma_2_post_full)),
-#          prop.var=med.var.sub/full.mod.var)
-
-
-#   mutate(mean.random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
-#          var.random.var=rep(sd(post_gen$sigma_2_post_nb_only)^2),
-#          mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-mean.random.var),
-#          # propagating uncorrelated variance, so this is variance of (submodel) variance (sum of variances)
-#          # variance of the proportion variance is approximated by a first order taylor expansion
-#          # https://www.stat.cmu.edu/~hseltman/files/ratio.pdf 
-#          var.var.sub=var.random.var+var.of.var,
-#          full.mod.var=rep(mean(post_gen$sigma_2_post_full)),
-#          var.full.mod.var=rep(sd(post_gen$sigma_2_post_full)^2),
-#          prop.var=mean.var.sub/full.mod.var,
-#          var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
-#          sd.prop.var=sqrt(var.prop.var))
-# now use the variance to estimate credible intervals of a beta distribution I guess
-
-
-# sigma.2.pred.df.lines<-sigma.2.pred.df%>%
-#   left_join(sigma.2.df.sum, by="param")
-
 
 sigma.2.density.legend<-ggplot(sigma.2.pred.df.lines)+
   # density of variance
@@ -665,36 +580,54 @@ sigma.2.density<-ggplot(sigma.2.pred.df.lines)+
         #strip.text.x=element_blank(),
         legend.position="none")
 
-
-ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=8, width=8)
-
-  
-  
-
-
 sigma.2.density
-
+ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=8, width=8)
 ```
 
-Can I make a stacked bar plot?
+Now a stacked bar plot illustrating proportion variance, adding CI of estimates as floating text
+
+using bayestestR to estimate credible intervals using the highest density interval (HDI) method, which will always include the mode of the distribution (rather than automatically excluding x% from each tail)
+
+I'll use 89% credible intervals as recommended by McElreath 2015 (it's stable at effective sample size)
 
 ```{r}
-sigma.2.df.sum.bar<-sigma.2.df.sum%>%
-  filter(param!="Full model")%>%
-    mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect")))%>%
-    arrange(desc(param))%>%
-    mutate(group=rep(as.factor(1)),
-           position=cumsum(prop.var)-0.5*prop.var,
-           note=as.character(round(prop.var, digits=2)),
-           note=str_pad(note, width=4,side="right", pad="0"))%>%
-    arrange(param)
+prop.var<-data.frame(param=c(rep("Angler effects", 8000), rep("Date effects",8000),
+                                     rep("Population density effect", 8000), rep("No covariates", 8000)),
+                             prop_var=c(post_gen$prop_var_angler, post_gen$prop_var_date, post_gen$prop_var_popDensity,
+                                     post_gen$prop_var_nb))%>%
+     mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect")))
+
+sum.prop.var<-prop.var%>%
+  group_by(param)%>%
+  summarize(mean_prop_var=mean(prop_var))
+
+CIs<-prop.var%>%
+  group_by(param)%>%
+  summarize(CIs=hdi(prop_var, ci=0.89),
+            CI_prop_var=hdi(prop_var, ci=0.89))
+
+CI_df<-CIs$CIs
+
+sum.prop.var.df<-cbind.data.frame(sum.prop.var, CI_df)%>%
+  arrange(desc(param))%>%
+  mutate(group=rep(as.factor(1)),
+         position=cumsum(mean_prop_var)-0.5*mean_prop_var,
+         note=paste0(as.character(round(mean_prop_var, digits=2)), " (", as.character(round(CI_low, digits=2)), ", ", 
+                     as.character(round(CI_high, digits=2)), ")"))
 
 
-position<-sigma.2.df.sum.bar$position
-note<-sigma.2.df.sum.bar$note
+# note that these distributions aren't limited to between 0 and 1. this might go in supplements
+ggplot(prop.var)+
+  geom_density(aes(x=prop_var, fill=param))+
+    scale_fill_manual(values=futurama[c(3,1,4,8)])+
+    facet_wrap(.~param, ncol=1)+
+  theme_classic()
 
-bar.full<-ggplot(sigma.2.df.sum.bar)+
-  geom_bar(aes(x=group, y=prop.var, fill=param), stat="identity", position="stack")+
+position<-sum.prop.var.df$position
+note<-sum.prop.var.df$note
+
+bar.full<-ggplot(sum.prop.var.df)+
+  geom_bar(aes(x=group, y=mean_prop_var, fill=param), stat="identity", position="stack")+
   scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
   annotate("text", x=1, y=position, label=note)+
   ylab("Mean predicted proportion of variance")+
@@ -706,19 +639,22 @@ bar.full<-ggplot(sigma.2.df.sum.bar)+
         axis.title.y=element_text(size=14))
 
 
-bar.plot<-ggplot(sigma.2.df.sum.bar)+
-  geom_bar(aes(x=group, y=prop.var, fill=param), stat="identity", position="stack")+
+
+
+bar.plot<-ggplot(sum.prop.var.df)+
+  geom_bar(aes(x=group, y=mean_prop_var, fill=param), stat="identity", position="stack")+
   scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
   annotate("text", x=1, y=position, label=note)+
   ylab("Mean predicted proportion of variance")+
-  scale_y_continuous(limits=c(0,1), expand=c(0,0))+
+  scale_y_continuous(limits=c(0,1.1), expand=c(0,0))+
   theme_classic()+
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
         axis.ticks.x=element_blank(),
         legend.position="none",
         axis.title.y=element_text(size=14))
-  bar.plot
+bar.full  
+bar.plot
 ```
 
 arranging plot
@@ -727,7 +663,7 @@ plot_grid(plot_grid(bar.plot, legend, ncol=1, rel_heights=c(0.75, 0.25)), sigma.
 ggsave(here("output_selected_model","figures","bar.density.png"), height=8, width=6)
 ```
 ```{r}
-plot_grid(plot_grid(bar.plot, NULL, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.3, 0.7), labels=c("A","B"))
+plot_grid(plot_grid(bar.plot, NULL, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.4, 0.6), labels=c("A","B"))
 
 
 ggsave(here("output_selected_model","figures","alt.bar.density.png"), height=8, width=6)
