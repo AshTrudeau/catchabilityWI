@@ -178,7 +178,8 @@ generated quantities{
   real sigma_2_post_fixed;
   real sigma_2_post_nb_only;
   real sigma_2_post_full;
-  
+
+
   real prop_var_angler;
   real prop_var_date;
   real prop_var_popDensity;
@@ -269,12 +270,11 @@ generated quantities{
   sigma_post_nb_only= sqrt(sigma_2_post_nb_only);
   sigma_post_full = sqrt(sigma_2_post_full);
   
-  prop_var_angler = (sigma_2_post_angler-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
-  prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
-  prop_var_popDensity =(sigma_2_post_fixed-sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
-  prop_var_nb = (sigma_2_post_nb_only)/(sigma_2_post_nb_only + sigma_2_post_angler + sigma_2_post_date + sigma_2_post_fixed);
- 
-  
+
+  prop_var_angler = (sigma_2_post_angler-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_date = (sigma_2_post_date-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_popDensity =(sigma_2_post_fixed-sigma_2_post_nb_only)/sigma_2_post_full;
+  prop_var_nb = (sigma_2_post_nb_only)/sigma_2_post_full;
 
   for(i in 1:A){
   predict_angler_catch[i] = neg_binomial_2_log_safe_rng(mean(log_effort)+log_q_mu+ log_q_a[i] + log_mu_q_d +  beta*mean(log_popDensity_sc), phi);

@@ -507,33 +507,31 @@ hist(sigma.2.angler)
 # pred_date<-post_gen$posterior_pred_date
 # pred_nb_only<-post_gen$posterior_pred_nb_only
 # 
-# sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
-#                                     rep("Population density effect", 8000), rep("No covariates", 8000)),
-#                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
-#                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
-# 
-#   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
-# 
-# # for each iteration of the model, I subtract the nb_only sub-model variance from the other sub-models (to get unique variance), then divide those by the sum of variance (rather than the variance of the full model predictions)
-# 
-# sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
-#                               sigma2_angler_nb=post_gen$sigma_2_post_angler,
-#                               sigma2_date_nb=post_gen$sigma_2_post_date,
-#                               sigma2_PE_nb=post_gen$sigma_2_post_fixed,
-#                               sigma2_nb=post_gen$sigma_2_post_nb_only)%>%
-#   mutate(sigma2_angler=sigma2_angler_nb-sigma2_nb,
-#          sigma2_date=sigma2_date_nb-sigma2_nb,
-#          sigma2_PE=sigma2_PE_nb-sigma2_nb,
-#          sigma2_sum=sigma2_angler+sigma2_date+sigma2_PE+sigma2_nb,
-#          prop_PE=sigma2_PE/sigma2_sum,
-#          prop_angler=sigma2_angler/sigma2_sum,
-#          prop_date=sigma2_date/sigma2_sum,
-#          prop_random=sigma2_nb/sigma2_sum)
-# 
-# hist(sigma.2.pred.wide$prop_angler)
-# hist(sigma.2.pred.wide$prop_date)
-# hist(sigma.2.pred.wide$prop_PE)
-# hist(sigma.2.pred.wide$prop_random)
+ sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
+                                     rep("Population density effect", 8000), rep("No covariates", 8000)),
+                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
+                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
+   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
+
+#for each iteration of the model, I subtract the nb_only sub-model variance from the other sub-models (to get unique variance), then divide those by the sum of variance (rather than the variance of the full model predictions)
+
+ sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
+                               sigma2_angler_nb=post_gen$sigma_2_post_angler,
+                               sigma2_date_nb=post_gen$sigma_2_post_date,
+                               sigma2_PE_nb=post_gen$sigma_2_post_fixed,
+                               sigma2_nb=post_gen$sigma_2_post_nb_only)%>%
+   mutate(sigma2_angler=sigma2_angler_nb-sigma2_nb,
+          sigma2_date=sigma2_date_nb-sigma2_nb,
+          sigma2_PE=sigma2_PE_nb-sigma2_nb,
+          prop_PE=sigma2_PE/sigma2_full,
+          prop_angler=sigma2_angler/sigma2_full,
+          prop_date=sigma2_date/sigma2_full,
+          prop_random=sigma2_nb/sigma2_full)
+
+hist(sigma.2.pred.wide$prop_angler)
+hist(sigma.2.pred.wide$prop_date)
+hist(sigma.2.pred.wide$prop_PE)
+hist(sigma.2.pred.wide$prop_random)
 # 
 # hist(sigma.2.pred.wide$sigma2_full)
 # hist(sigma.2.pred.wide$sigma2_sum)
@@ -541,34 +539,64 @@ hist(sigma.2.angler)
 
 
 
-hist(post_gen$prop_var_popDensity)
-hist(post_gen$prop_var_angler)
-hist(post_gen$prop_var_date)
-hist(post_gen$prop_var_nb)
+hist(post_gen$prop_var_popDensity_sum)
+hist(post_gen$prop_var_angler_sum)
+hist(post_gen$prop_var_date_sum)
+hist(post_gen$prop_var_nb_sum)
+
+hist(post_gen$prop_var_popDensity_full)
+hist(post_gen$prop_var_angler_full)
+hist(post_gen$prop_var_date_full)
+hist(post_gen$prop_var_nb_full)
+
+# no, this didn't work.
+
+sigma.2.pred.df<-data.frame(param=c(rep("Full model", 8000), rep("Angler effects", 8000), rep("Date effects",8000),
+                                     rep("Population density effect", 8000), rep("No covariates", 8000), 
+                                    rep("Sum of variance", 8000)),
+                             sigma2=c(post_gen$sigma_2_post_full, post_gen$sigma_2_post_angler, post_gen$sigma_2_post_date,
+                                     post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only, post_gen$sum_sigma_2))%>%
+ 
+   mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model", "Sum of variance")))
+
+prop.var.df<-data.frame(param=c(rep("Angler effects", 8000), rep("Date effects", 8000), 
+                                rep("Population density effect", 8000), rep("No covariates", 8000)),
+                        prop.var=c(post_gen$prop_var_angler, post_gen$prop_var_date, post_gen$prop_var_popDensity,
+                                   post_gen$prop_var_nb))
+
+ sigma.2.df.sum<-sigma.2.pred.df%>%
+   group_by(param)%>%
+   summarize(mean.var=mean(sigma2),
+             var.of.var=sd(sigma2)^2,
+             sd.of.var=sd(sigma2))%>%
+   ungroup()
+
+ sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
+                              sigma2_angler_nb=post_gen$sigma_2_post_angler,
+                              sigma2_date_nb=post_gen$sigma_2_post_date,
+                              sigma2_PE_nb=post_gen$sigma_2_post_fixed,
+                              sigma2_nb=post_gen$sigma_2_post_nb_only,
+                              sum_sigma2=post_gen$sum_sigma_2,
+                              prop_angler=post_gen$prop_var_angler,
+                              prop_date=post_gen$prop_var_date,
+                              prop_popDensity=post_gen$prop_var_popDensity,
+                              prop_random=post_gen$prop_var_nb)%>%
+   mutate(sigma2_angler=sigma2_angler_nb-sigma2_nb,
+          sigma2_date=sigma2_date_nb-sigma2_nb,
+          sigma2_popDensity=sigma2_PE_nb-sigma2_nb)
+ 
+ sigma.2.df.sum<-sigma.2.pred.df%>%
+   group_by(param)%>%
+   summarize(mean.var=mean(sigma2),
+             sd.of.var=sd(sigma2),
+             var.of.var=sd.of.var^2)
 ```
 
-
+I'm so lost. Left off here 12/27/24. Struggling with proportion variance still--was adding up the variance of each submodel really appropriate? I'm counting the random variation multiple times! 
 ```{r}
-ggplot(sigma.2.pred.wide)+
-  geom_point(aes(x=sigma2_angler, y=sigma2_date))
 
-ggplot(sigma.2.pred.wide)+
-  geom_point(aes(x=prop_angler, y=prop_date))
-
-cor.sigma2<-select(sigma.2.pred.wide, sigma2_full, sigma2_angler, sigma2_date, sigma2_PE)
-
-cor.prop<-select(sigma.2.pred.wide, prop_PE:prop_random)
-
-chart.Correlation(cor.sigma2)
-
-```
-
-```{r}
-chart.Correlation(cor.prop)
-
-```
-
-```{r}
+#sigma.2.df.sum<-sigma.2.pred.df%>%
+  
 
 # results are abouat the same using median instead of mean
 
@@ -582,32 +610,23 @@ chart.Correlation(cor.prop)
 #          prop.var=med.var.sub/full.mod.var)
 
 
-sigma.2.df.sum<-sigma.2.pred.df%>%
-  group_by(param)%>%
-  summarize(mean.var=mean(sigma2),
-            var.of.var=sd(sigma2)^2)%>%
-  ungroup()%>%
-  mutate(mean.random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
-         var.random.var=rep(sd(post_gen$sigma_2_post_nb_only)^2),
-         mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-mean.random.var),
-         # propagating uncorrelated variance, so this is variance of (submodel) variance (sum of variances)
-         # variance of the proportion variance is approximated by a first order taylor expansion
-         # https://www.stat.cmu.edu/~hseltman/files/ratio.pdf 
-         var.var.sub=var.random.var+var.of.var,
-         full.mod.var=rep(mean(post_gen$sigma_2_post_full)),
-         var.full.mod.var=rep(sd(post_gen$sigma_2_post_full)^2),
-         prop.var=mean.var.sub/full.mod.var,
-         var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
-         sd.prop.var=sqrt(var.prop.var))
+#   mutate(mean.random.var=rep(mean(post_gen$sigma_2_post_nb_only)),
+#          var.random.var=rep(sd(post_gen$sigma_2_post_nb_only)^2),
+#          mean.var.sub=ifelse(param=="No covariates", mean.var, mean.var-mean.random.var),
+#          # propagating uncorrelated variance, so this is variance of (submodel) variance (sum of variances)
+#          # variance of the proportion variance is approximated by a first order taylor expansion
+#          # https://www.stat.cmu.edu/~hseltman/files/ratio.pdf 
+#          var.var.sub=var.random.var+var.of.var,
+#          full.mod.var=rep(mean(post_gen$sigma_2_post_full)),
+#          var.full.mod.var=rep(sd(post_gen$sigma_2_post_full)^2),
+#          prop.var=mean.var.sub/full.mod.var,
+#          var.prop.var=(mean.var.sub^2/full.mod.var^2)*((var.var.sub/mean.var.sub^2)+(var.full.mod.var/full.mod.var^2)),
+#          sd.prop.var=sqrt(var.prop.var))
 # now use the variance to estimate credible intervals of a beta distribution I guess
 
-alpha.beta<-sigma.2.df.sum%>%
-  select(param, prop.var, var.prop.var)%>%
-  mutate(alpha=(((1-prop.var)/var.prop.var)-(1/prop.var))*prop.var^2,
-         beta=alpha*((1/prop.var)-1))
 
-sigma.2.pred.df.lines<-sigma.2.pred.df%>%
-  left_join(sigma.2.df.sum, by="param")
+# sigma.2.pred.df.lines<-sigma.2.pred.df%>%
+#   left_join(sigma.2.df.sum, by="param")
 
 
 sigma.2.density.legend<-ggplot(sigma.2.pred.df.lines)+
