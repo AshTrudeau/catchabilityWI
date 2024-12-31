@@ -339,17 +339,17 @@ ggsave(here::here("output_selected_model","figures","catch.effort.histograms.png
  set.seed(26)
  
  # this model is the selected model that also generates posterior predictions
-  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
-                   data=data.list,
-                   control=list(stepsize=0.1, max_treedepth=15),
-                   chains=4,
-                   warmup=1000,
-                   iter=3000,
-                   cores=4,
-                   refresh=0)
- saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
+ #  fit_gen<-stan(file=here("candidate_models","selected_model_angler_date_int_gen.stan"),
+ #                   data=data.list,
+ #                   control=list(stepsize=0.1, max_treedepth=15),
+ #                   chains=4,
+ #                   warmup=1000,
+ #                   iter=3000,
+ #                   cores=4,
+ #                   refresh=0)
+ # saveRDS(fit_gen, here("output_selected_model","fits","model_with_predictions.rds"))
 # for use after model has been fit
-#fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
+fit_gen<-readRDS(here("output_selected_model","fits","model_with_predictions.rds"))
 
 post_gen<-extract(fit_gen)
 
@@ -361,12 +361,17 @@ summary table
 fit.table<-rstan::summary(fit_gen, pars=c("beta","phi","sigma_q_a","sigma_q_d", "popDensity",
                                "log_q_a","log_q_d",
                                "log_q_mu","log_mu_q_a","log_mu_q_d","q_a_raw",
-                         "q_d_raw","lp__"))
+                         "q_d_raw","lp__"), probs=c(0.055, 0.945))
 
 table.summary<-fit.table$summary
 write.csv(table.summary, here::here("output_selected_model","tables","fit_angler_date_int_param_summary.csv"))
 ```
 
+
+beta 89% credible intervals
+```{r}
+hdi(post_gen$beta, ci=0.89)
+```
 
 First thing is a nice set of plots showing the posteriors of beta, each sigma, the mean intercept, and the angler-, lake-, and date-specific intercepts
 
@@ -501,7 +506,7 @@ ggsave(here("output_selected_model", "figures","sigma_prior_check.png"))
                                      post_gen$sigma_2_post_fixed, post_gen$sigma_2_post_nb_only))%>%
    mutate(param=factor(param, levels=c("No covariates","Angler effects","Date effects","Population density effect","Full model")))
 
-#for each iteration of the model, I subtract the nb_only sub-model variance from the other sub-models (to get unique variance), then divide those by the sum of variance (rather than the variance of the full model predictions)
+#for each iteration of the model, I subtract the nb_only sub-model variance from the other sub-models (to get unique variance), then divide those by the full model variance
 
  sigma.2.pred.wide<-data.frame(sigma2_full=post_gen$sigma_2_post_full,
                                sigma2_angler_nb=post_gen$sigma_2_post_angler,
@@ -537,6 +542,8 @@ hist(post_gen$prop_var_nb)
  sigma.2.pred.df.lines<-sigma.2.pred.df%>%
    left_join(sigma.2.df.sum, by="param")
 ```
+
+Yes, these results are identical. 
 
 Now producing plots showing the probability density of the simulation variances for each sub-model compared to the full model (with vertical dotted lines for mean variance--still needed?)
 
@@ -581,7 +588,7 @@ sigma.2.density<-ggplot(sigma.2.pred.df.lines)+
         legend.position="none")
 
 sigma.2.density
-ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=8, width=8)
+ggsave(here::here("output_selected_model","figures","submodel.sigma.density.png"), height=6, width=4)
 ```
 
 Now a stacked bar plot illustrating proportion variance, adding CI of estimates as floating text
@@ -591,6 +598,7 @@ using bayestestR to estimate credible intervals using the highest density interv
 I'll use 89% credible intervals as recommended by McElreath 2015 (it's stable at effective sample size)
 
 ```{r}
+
 prop.var<-data.frame(param=c(rep("Angler effects", 8000), rep("Date effects",8000),
                                      rep("Population density effect", 8000), rep("No covariates", 8000)),
                              prop_var=c(post_gen$prop_var_angler, post_gen$prop_var_date, post_gen$prop_var_popDensity,
@@ -599,7 +607,9 @@ prop.var<-data.frame(param=c(rep("Angler effects", 8000), rep("Date effects",800
 
 sum.prop.var<-prop.var%>%
   group_by(param)%>%
-  summarize(mean_prop_var=mean(prop_var))
+  summarize(mean_prop_var=mean(prop_var),
+            med_prop_var=median(prop_var),
+            sd_prop_var=sd(prop_var))
 
 CIs<-prop.var%>%
   group_by(param)%>%
@@ -615,14 +625,34 @@ sum.prop.var.df<-cbind.data.frame(sum.prop.var, CI_df)%>%
          note=paste0(as.character(round(mean_prop_var, digits=2)), " (", as.character(round(CI_low, digits=2)), ", ", 
                      as.character(round(CI_high, digits=2)), ")"))
 
+prop.var.df<-left_join(prop.var, sum.prop.var.df, by="param")
 
 # note that these distributions aren't limited to between 0 and 1. this might go in supplements
-ggplot(prop.var)+
+prop_var_density<-ggplot(prop.var.df)+
   geom_density(aes(x=prop_var, fill=param))+
-    scale_fill_manual(values=futurama[c(3,1,4,8)])+
     facet_wrap(.~param, ncol=1)+
-  theme_classic()
+  xlim(-0.2,1.2)+
+  theme_bw()+
+  geom_vline(aes(xintercept = mean_prop_var), linetype="dotted")+
+  scale_fill_manual(values=futurama[c(3, 1, 4, 8)], "Predictors")+
+  facet_wrap(.~param, ncol=1)+
+  xlab("Estimated proportion variance explained")+
+  ylab("Probability density")+
+  theme_bw()+
+    theme(legend.title=element_text(size=14),
+        legend.text=element_text(size=12),
+        axis.title.y=element_text(size=14),
+        axis.title.x=element_text(size=12), 
+        #strip.text.x=element_blank(),
+        legend.position="none")
 
+prop_var_density
+ggsave(here::here("output_selected_model","figures","prop_var_density.png"), height=6, width=4)
+
+```
+dotted vertical lines at median values
+
+```{r}
 position<-sum.prop.var.df$position
 note<-sum.prop.var.df$note
 
@@ -634,36 +664,36 @@ bar.full<-ggplot(sum.prop.var.df)+
   theme_classic()+
   theme(axis.title.x=element_blank(),
         axis.text.x=element_blank(),
-        legend.title=element_text(size=14),
-        legend.text=element_text(size=12),
-        axis.title.y=element_text(size=14))
-
-
-
-
-bar.plot<-ggplot(sum.prop.var.df)+
-  geom_bar(aes(x=group, y=mean_prop_var, fill=param), stat="identity", position="stack")+
-  scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
-  annotate("text", x=1, y=position, label=note)+
-  ylab("Mean predicted proportion of variance")+
-  scale_y_continuous(limits=c(0,1.1), expand=c(0,0))+
-  theme_classic()+
-  theme(axis.title.x=element_blank(),
-        axis.text.x=element_blank(),
-        axis.ticks.x=element_blank(),
         legend.position="none",
-        axis.title.y=element_text(size=14))
+        axis.title.y=element_text(size=12))
+
+
+
+
+# bar.plot<-ggplot(sum.prop.var.df)+
+#   geom_bar(aes(x=group, y=mean_prop_var, fill=param), stat="identity", position="stack")+
+#   scale_fill_manual(values=futurama[c(3,1,4,8)], "Model predictions")+
+#   annotate("text", x=1, y=position, label=note)+
+#   ylab("Mean predicted proportion of variance")+
+#   scale_y_continuous(limits=c(0,1.1), expand=c(0,0))+
+#   theme_classic()+
+#   theme(axis.title.x=element_blank(),
+#         axis.text.x=element_blank(),
+#         axis.ticks.x=element_blank(),
+#         legend.position="none",
+#         axis.title.y=element_text(size=14))
 bar.full  
 bar.plot
 ```
 
 arranging plot
 ```{r}
-plot_grid(plot_grid(bar.plot, legend, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.3, 0.7))
+plot_grid(plot_grid(bar.full, prop_var_density, ncol=2, rel_widths=c(0.4, 0.6), labels=c("A","B")))
 ggsave(here("output_selected_model","figures","bar.density.png"), height=8, width=6)
 ```
+
 ```{r}
-plot_grid(plot_grid(bar.plot, NULL, ncol=1, rel_heights=c(0.75, 0.25)), sigma.2.density, ncol=2, rel_widths=c(0.4, 0.6), labels=c("A","B"))
+plot_grid(plot_grid(bar.plot, NULL, ncol=1, rel_heights=c(0.75, 0.25)), prop_var_density, ncol=2, rel_widths=c(0.4, 0.6), labels=c("A","B"))
 
 
 ggsave(here("output_selected_model","figures","alt.bar.density.png"), height=8, width=6)
@@ -715,8 +745,8 @@ angler_long_plot<-angler_long%>%
   mutate(angler=as.factor(as.numeric(str_replace(angler, "angler_", ""))))
 
 angler<-ggplot(angler_long_plot)+
-  geom_point(aes(x=mean, y=angler))+
-  geom_errorbarh(aes(y=angler, xmin=lower95, xmax=upper95))+
+  geom_point(aes(x=mean, y=reorder(angler, mean)))+
+  geom_errorbarh(aes(y=reorder(angler, mean), xmin=lower95, xmax=upper95))+
   ylab("Angler observed")+
   xlab(expression(paste("Angler skill effect (ln", q["a"], ")")))+
   theme_bw()
